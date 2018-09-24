@@ -1,0 +1,11 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include
+
+Name: playready
+Description: OCDM Nexus SAGE/SVP 
+Requires:
+Version: 0.1
+Libs: -L${libdir} -lb_secbuf -lbrcmsvpmeta
+Cflags: -I${includedir} -I${includedir}/refsw 

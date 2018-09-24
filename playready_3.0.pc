@@ -1,0 +1,12 @@
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+includedir=${prefix}/include/refsw
+
+Name: playready
+Description: Microsoft Playready
+Requires:
+Version: 3.0
+Libs: -L${libdir} -lnexus -ldrmrootfs -lprdyhttp -lb_secbuf -lplayready30pk
+Cflags: -I${includedir} -DBSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE -DUSE_PK_NAMESPACES=1 -DDRM_INCLUDE_PK_NAMESPACE_USING_STATEMENT=1 -DDRM_BUILD_PROFILE=900
+
