@@ -18,6 +18,8 @@ add_library(${DRM_PLUGIN_NAME} SHARED
 )
 
 set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES 
+    CXX_STANDARD 11
+    CXX_STANDARD_REQUIRED YES
     SUFFIX ".drm"
     PREFIX ""
 )
