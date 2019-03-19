@@ -1,22 +1,26 @@
 cmake_minimum_required(VERSION 2.8)
 
-include(${CMAKE_SYSROOT}${CMAKE_INSTALL_PREFIX}/include/cmake/WPEFramework.cmake)
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
+set(DRM_PLUGIN_NAME PlayReady)
 
 option(NEXUS_PLAYREADY_SVP_ENABLE "SAGE/SVP is enabled" OFF)
 
-set(DRM_PLUGIN_NAME PlayReady)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
+
+if(NOT NAMESPACE)
+   set(NAMESPACE "WPEFramework")
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-find_package(Core REQUIRED)
 find_package(BcmNxServer REQUIRED)
+find_package(WPEFrameworkCore REQUIRED)
 
 file(GLOB DRM_PLUGIN_INCLUDES *.h)
 
 set(DRM_PLUGIN_INCLUDES
     ${DRM_PLUGIN_INCLUDES}
     ${NXREFSW_INCLUDE_PATH}
-    ${CORE_INCLUDE_DIR})
+    ${WPEFRAMEWORKCORE_INCLUDE_DIR})
 
 set(DRM_PLUGIN_FLAGS
     -DBSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE
@@ -32,7 +36,7 @@ set(DRM_PLUGIN_LIBS
     -lsrai
     -lb_secbuf
     -lplayready30pk
-    ${CORE_LIBRARIES}
+    ${WPEFRAMEWORKCORE_LIBRARY}
     ${MODULE_NAME})
 
 set(DRM_PLUGIN_SOURCES
