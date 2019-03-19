@@ -1,59 +1,49 @@
-cmake_minimum_required(VERSION 2.8)
-
-set(DRM_PLUGIN_NAME PlayReady)
+cmake_minimum_required(VERSION 3.3)
 
 option(NEXUS_PLAYREADY_SVP_ENABLE "SAGE/SVP is enabled" OFF)
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/")
+set(DRM_PLUGIN_NAME PlayReady)
 
-if(NOT NAMESPACE)
-   set(NAMESPACE "WPEFramework")
-endif()
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+find_package(WPEFramework REQUIRED)
+find_package(${NAMESPACE}Core REQUIRED)
+find_package(NEXUS REQUIRED)
+find_package(NXCLIENT REQUIRED)
+find_package(NexusPlayready REQUIRED)
 
-find_package(BcmNxServer REQUIRED)
-find_package(WPEFrameworkCore REQUIRED)
-
-file(GLOB DRM_PLUGIN_INCLUDES *.h)
-
-set(DRM_PLUGIN_INCLUDES
-    ${DRM_PLUGIN_INCLUDES}
-    ${NXREFSW_INCLUDE_PATH}
-    ${WPEFRAMEWORKCORE_INCLUDE_DIR})
-
-set(DRM_PLUGIN_FLAGS
-    -DBSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE
-    -DUSE_PK_NAMESPACES=1
-    -DDRM_INCLUDE_PK_NAMESPACE_USING_STATEMENT=1
-    -DDRM_BUILD_PROFILE=900)
-
-set(DRM_PLUGIN_LIBS
-    ${LIBNEXUS_LIBRARY}
-    ${LIBNXCLIENT_LIBRARY}
-    -ldrmrootfs
-    -lprdyhttp
-    -lsrai
-    -lb_secbuf
-    -lplayready30pk
-    ${WPEFRAMEWORKCORE_LIBRARY}
-    ${MODULE_NAME})
-
-set(DRM_PLUGIN_SOURCES
+add_library(${DRM_PLUGIN_NAME} SHARED 
     MediaSession.cpp
-    MediaSystem.cpp)
+    MediaSystem.cpp
+)
+
+set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES 
+    SUFFIX ".drm"
+    PREFIX ""
+)
+
+target_compile_definitions(${DRM_PLUGIN_NAME} 
+    PRIVATE 
+        BSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE
+        USE_PK_NAMESPACES=1
+        DRM_INCLUDE_PK_NAMESPACE_USING_STATEMENT=1
+        DRM_BUILD_PROFILE=900
+)
+
+target_link_libraries(${DRM_PLUGIN_NAME} 
+    PRIVATE
+        ${NAMESPACE}Core::${NAMESPACE}Core 
+        NEXUS::NEXUS
+        NXCLIENT::NXCLIENT
+        NexusPlayready::NexusPlayready
+)
 
 if (NEXUS_PLAYREADY_SVP_ENABLE)
-   set(DRM_PLUGIN_FLAGS ${DRM_PLUGIN_FLAGS} -DNEXUS_PLAYREADY_SVP_ENABLE)
+    target_compile_definitions(${DRM_PLUGIN_NAME} 
+        PRIVATE 
+            NEXUS_PLAYREADY_SVP_ENABLE
+    )
 endif()
-
-# add the library
-add_library(${DRM_PLUGIN_NAME} SHARED ${DRM_PLUGIN_SOURCES})
-target_compile_definitions(${DRM_PLUGIN_NAME} PRIVATE ${DRM_PLUGIN_FLAGS})
-target_include_directories(${DRM_PLUGIN_NAME} PRIVATE ${DRM_PLUGIN_INCLUDES})
-target_link_libraries(${DRM_PLUGIN_NAME} ${DRM_PLUGIN_LIBS})
-set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES SUFFIX ".drm")
-set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES PREFIX "")
 
 install(TARGETS ${DRM_PLUGIN_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/${NAMESPACE}/OCDM)
 
