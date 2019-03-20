@@ -805,7 +805,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
 #if NEXUS_PLAYREADY_SVP_ENABLE
     DRM_BYTE *desc = nullptr;
-    Rpc_Secbuf_Info RPCsecureBufferInfo;
+    Rpc_Secbuf_Info *RPCsecureBufferInfo;
     B_Secbuf_Info   BsecureBufferInfo;
 #endif
 
@@ -825,20 +825,21 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
     void *pOpaqueData;
 
-    ::memcpy(&RPCsecureBufferInfo, payloadData, payloadDataSize);
+    RPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
+    ::memcpy(RPCsecureBufferInfo, payloadData, payloadDataSize);
 
-    if (B_Secbuf_AllocWithToken(RPCsecureBufferInfo.size, (B_Secbuf_Type)RPCsecureBufferInfo.type, RPCsecureBufferInfo.token, &pOpaqueData)) {
+    if (B_Secbuf_AllocWithToken(RPCsecureBufferInfo->size, (B_Secbuf_Type)RPCsecureBufferInfo->type, RPCsecureBufferInfo->token, &pOpaqueData)) {
         printf("B_Secbuf_AllocWithToken() failed!\n");
     } else {
-        payloadDataSize = RPCsecureBufferInfo.size;
+        payloadDataSize = RPCsecureBufferInfo->size;
         //printf("B_Secbuf_AllocWithToken() succeeded. size:%d clear:%d type:%d token:%p ptr:%p %s:%d \n",sb_info.size, sb_info.clear_size, (B_Secbuf_Type)sb_info.type, sb_info.token,pOpaqueData, __FUNCTION__,__LINE__);
     }
 
      _decoderLock.Lock();
      if (Drm_Reader_DecryptOpaque(
             &m_oDecryptContext,
-            RPCsecureBufferInfo.subsamples_count,
-            RPCsecureBufferInfo.subsamples,
+            RPCsecureBufferInfo->subsamples_count,
+            RPCsecureBufferInfo->subsamples,
             oAESContext.qwInitializationVector,
             payloadDataSize,
             (DRM_BYTE*)pOpaqueData,
@@ -853,7 +854,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
             }
 
             B_Secbuf_Free(pOpaqueData);
-            
+            ::free(RPCsecureBufferInfo);
+
             // Return clear content.
             *f_pcbOpaqueClearContent = 0;
             *f_ppbOpaqueClearContent = nullptr;
@@ -863,6 +865,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
     }
     else {
         printf("Drm_Reader_DecryptOpaque is failed -----> \n");
+        ::free(RPCsecureBufferInfo);
         B_Secbuf_Free(pOpaqueData);
         _decoderLock.Unlock();
         return CDMi_S_FALSE;
