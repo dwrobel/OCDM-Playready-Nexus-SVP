@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include "cdmi.h"
 #include "MediaSession.h"
 
 namespace CDMi {
@@ -30,7 +29,6 @@ public:
         NxClient_JoinSettings joinSettings;
         NEXUS_Error rc;
         NEXUS_ClientConfiguration platformConfig;
-        OEM_Settings         oemSettings;
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_SUCCESS;
 
@@ -56,6 +54,9 @@ public:
             }
         }
 
+#ifndef PLAYREADY_SAGE
+        OEM_Settings         oemSettings;
+
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
         oemSettings.heap = heapSettings.heap;
 
@@ -64,7 +65,7 @@ public:
 
         m_drmOemContext = oemSettings.f_pOEMContext;
         ChkMem(m_drmOemContext);
-
+#endif
 ErrorExit:
         if (DRM_FAILED(dr))
         {
