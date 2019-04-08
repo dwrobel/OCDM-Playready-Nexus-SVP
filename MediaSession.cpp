@@ -16,30 +16,25 @@
 
 #include "MediaSession.h"
 #include <assert.h>
-#include <iostream>
-#include <sstream>
-#include <string>
-#include <string.h>
-#include <vector>
-#include <sys/utsname.h>
+#include <cstring>
+#include <sys/time.h>
 
-#include <refsw/nexus_random_number.h>
+#include <nexus_random_number.h>
 
-#include <refsw/drmbuild_oem.h>
-#include <refsw/drmnamespace.h>
-#include <refsw/drmbytemanip.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmbase64.h>
-#include <refsw/drmsoapxmlutility.h>
-#include <refsw/oemcommon.h>
-#include <refsw/drmconstants.h>
-#include <refsw/drmsecuretime.h>
-#include <refsw/drmsecuretimeconstants.h>
-#include <refsw/drmrevocation.h>
-#include <refsw/drmxmlparser.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/prdy_http.h>
-#include <refsw/drm_data.h>
+#include <drmnamespace.h>
+#include <drmbytemanip.h>
+#include <drmmanager.h>
+#include <drmbase64.h>
+#include <drmsoapxmlutility.h>
+#include <oemcommon.h>
+#include <drmconstants.h>
+#include <drmsecuretime.h>
+#include <drmsecuretimeconstants.h>
+#include <drmrevocation.h>
+#include <drmxmlparser.h>
+#include <drmmathsafe.h>
+#include <prdy_http.h>
+#include <drm_data.h>
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -47,7 +42,7 @@
 #define DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ( 64 * MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE )
 
 #ifdef NEXUS_PLAYREADY_SVP_ENABLE
-#include <refsw/b_secbuf.h>
+#include <b_secbuf.h>
 
 struct Rpc_Secbuf_Info {
     uint32_t type;
@@ -388,8 +383,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
         , m_piCallback(nullptr)
         , m_eKeyState(KEY_CLOSED)
         , m_fCommit(false)
-        , m_pOEMContext(f_pOEMContext)
-        , _decoderLock() {
+        , m_pOEMContext(f_pOEMContext) {
 
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
@@ -397,7 +391,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     DRM_WCHAR          rgwchHDSPath[ DRM_MAX_PATH ];
     DRM_CONST_STRING   dstrHDSPath = DRM_EMPTY_DRM_STRING;
     NEXUS_ClientConfiguration platformConfig;
-    OEM_Settings         oemSettings;
     std::string playreadyInitData;
     DRM_WCHAR           *hdsDir = bdrm_get_hds_dir();
     DRM_WCHAR           *hdsFname = bdrm_get_pr3x_hds_fname();
@@ -491,8 +484,8 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     else
     {
         if (dr != 0) {
-            printf("%d Expect platform to support Secure Clock or Anti-Rollback Clock.  Possible certificate error.%u:%d\n",
-                   __LINE__, dr, dr);
+            printf("%d Expect platform to support Secure Clock or Anti-Rollback Clock.  Possible certificate error.%jd\n",
+                   __LINE__, static_cast<intmax_t>(dr));
             goto ErrorExit;
         }
     }
@@ -803,7 +796,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
     DRM_DWORD cbData = 0;
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-#if NEXUS_PLAYREADY_SVP_ENABLE
+#ifdef NEXUS_PLAYREADY_SVP_ENABLE
     DRM_BYTE *desc = nullptr;
     Rpc_Secbuf_Info *RPCsecureBufferInfo;
     B_Secbuf_Info   BsecureBufferInfo;
@@ -821,7 +814,10 @@ CDMi_RESULT MediaKeySession::Decrypt(
         oAESContext.qwInitializationVector += f_pbIV[i];
     }
 
-#if NEXUS_PLAYREADY_SVP_ENABLE
+ErrorExit:
+    return CDMi_S_FALSE;
+
+#ifdef NEXUS_PLAYREADY_SVP_ENABLE
 
     void *pOpaqueData;
 
@@ -835,7 +831,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
         //printf("B_Secbuf_AllocWithToken() succeeded. size:%d clear:%d type:%d token:%p ptr:%p %s:%d \n",sb_info.size, sb_info.clear_size, (B_Secbuf_Type)sb_info.type, sb_info.token,pOpaqueData, __FUNCTION__,__LINE__);
     }
 
-     _decoderLock.Lock();
+     std::lock_guard<std::mutex> guard(_decoderLock);
      if (Drm_Reader_DecryptOpaque(
             &m_oDecryptContext,
             RPCsecureBufferInfo->subsamples_count,
@@ -860,23 +856,18 @@ CDMi_RESULT MediaKeySession::Decrypt(
             *f_pcbOpaqueClearContent = 0;
             *f_ppbOpaqueClearContent = nullptr;
 
-            _decoderLock.Unlock();
             return CDMi_SUCCESS;
     }
     else {
         printf("Drm_Reader_DecryptOpaque is failed -----> \n");
         ::free(RPCsecureBufferInfo);
         B_Secbuf_Free(pOpaqueData);
-        _decoderLock.Unlock();
         return CDMi_S_FALSE;
     }
-
 #else
-	printf("Playready 3.0 support of None-SVP, not implemented yet!\n");
-#endif
-
-ErrorExit:
+    printf("%s\n", "Playready support of None-SVP, not implemented yet!");
     return CDMi_S_FALSE;
+#endif
 }
 
 CDMi_RESULT MediaKeySession::ReleaseClearContent(
@@ -1008,7 +999,7 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
 
     /* NOW testing the system time */
 
-    ErrorExit:
+ErrorExit:
 
     ChkVOID( SAFE_OEM_FREE( pbChallenge ) );
 
