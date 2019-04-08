@@ -1,51 +1,43 @@
 cmake_minimum_required(VERSION 3.3)
+project(wpeframework-ocdm-playready-nexus-svp)
+include(GNUInstallDirs)
 
-option(NEXUS_PLAYREADY_SVP_ENABLE "SAGE/SVP is enabled" OFF)
+set(PLAYREADY_PKG_CONFIG_NAME "playready4" CACHE STRING "Playready pkg-config file name (default: playready4)")
 
 set(DRM_PLUGIN_NAME PlayReady)
 
-set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(WPEFramework REQUIRED)
-find_package(${NAMESPACE}Core REQUIRED)
-find_package(NEXUS REQUIRED)
-find_package(NXCLIENT REQUIRED)
-find_package(NexusPlayready REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_search_module(PLAYREADY ${PLAYREADY_PKG_CONFIG_NAME})
 
-add_library(${DRM_PLUGIN_NAME} SHARED 
-    MediaSession.cpp
-    MediaSystem.cpp
+message(STATUS "PLAYREADY_CFLAGS_OTHER: ${PLAYREADY_CFLAGS_OTHER}")
+
+set(DRM_PLUGIN_SOURCES
+  MediaSession.cpp
+  MediaSystem.cpp
+  MediaSession.h)
+
+set(DRM_PLUGIN_INCLUDE_DIRS
+  ${PLAYREADY_INCLUDE_DIRS}
+  ${DRM_PLUGIN_INCLUDE_DIRS}
 )
 
-set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES 
-    CXX_STANDARD 11
-    CXX_STANDARD_REQUIRED YES
-    SUFFIX ".drm"
-    PREFIX ""
+set(DRM_PLUGIN_CFLAGS_OTHER
+  ${PLAYREADY_CFLAGS_OTHER}
+  ${DRM_PLUGIN_CFLAGS_OTHER}
 )
 
-target_compile_definitions(${DRM_PLUGIN_NAME} 
-    PRIVATE 
-        BSTD_CPU_ENDIAN=BSTD_ENDIAN_LITTLE
-        USE_PK_NAMESPACES=1
-        DRM_INCLUDE_PK_NAMESPACE_USING_STATEMENT=1
-        DRM_BUILD_PROFILE=900
+set(DRM_PLUGIN_LIBRARIES
+  ${PLAYREADY_LIBRARIES}
 )
 
-target_link_libraries(${DRM_PLUGIN_NAME} 
-    PRIVATE
-        ${NAMESPACE}Core::${NAMESPACE}Core 
-        NEXUS::NEXUS
-        NXCLIENT::NXCLIENT
-        NexusPlayready::NexusPlayready
-)
-
-if (NEXUS_PLAYREADY_SVP_ENABLE)
-    target_compile_definitions(${DRM_PLUGIN_NAME} 
-        PRIVATE 
-            NEXUS_PLAYREADY_SVP_ENABLE
-    )
-endif()
+add_library(${DRM_PLUGIN_NAME} SHARED ${DRM_PLUGIN_SOURCES})
+target_compile_definitions(${DRM_PLUGIN_NAME} PRIVATE ${DRM_PLUGIN_CFLAGS_OTHER})
+target_include_directories(${DRM_PLUGIN_NAME} PRIVATE ${DRM_PLUGIN_INCLUDE_DIRS})
+target_link_libraries(${DRM_PLUGIN_NAME} ${DRM_PLUGIN_LIBRARIES})
+set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES SUFFIX ".drm")
+set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES PREFIX "")
 
 install(TARGETS ${DRM_PLUGIN_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/${NAMESPACE}/OCDM)
-
