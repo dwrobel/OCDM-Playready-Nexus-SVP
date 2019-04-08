@@ -16,21 +16,30 @@
 
 #pragma once
 
-#include "cdmi.h"
-#include <core/core.h>
+// Comes from Nexus configuration
+// passed by playready pkg-config file.
+#ifdef CMD_DRM_PLAYREADY_SAGE_IMPL
+#  define NEXUS_PLAYREADY_SVP_ENABLE
+#endif
 
-#include <refsw/nexus_config.h>
-#include <refsw/nxclient.h>
-#include <refsw/nexus_platform.h>
-#include <refsw/nexus_memory.h>
-#include <refsw/bstd.h>           /* brcm includes */
-#include <refsw/bkni.h>
+#include <iostream>
+#include <mutex>
 
-#include <refsw/oemcommon.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/drmtypes.h>
-#include <refsw/drmerr.h>
+#include <cdmi.h>
+
+#include <nexus_config.h>
+#include <nxclient.h>
+#include <nexus_platform.h>
+#include <nexus_memory.h>
+
+#include <bstd.h>           /* brcm includes */
+#include <bkni.h>
+
+#include <oemcommon.h>
+#include <drmmanager.h>
+#include <drmmathsafe.h>
+#include <drmtypes.h>
+#include <drmerr.h>
 
 namespace CDMi {
 
@@ -130,8 +139,7 @@ private:
     DRM_BOOL m_fCommit;
     DRM_VOID *m_pOEMContext;
 
-    WPEFramework::Core::CriticalSection _decoderLock;
-
+    std::mutex _decoderLock;
 };
 
 } // namespace CDMi
