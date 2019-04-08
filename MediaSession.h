@@ -16,21 +16,34 @@
 
 #pragma once
 
-#include "cdmi.h"
-#include <core/core.h>
+#include <iostream>
+#include <mutex>
+#include <endian.h>
 
-#include <refsw/nexus_config.h>
-#include <refsw/nxclient.h>
-#include <refsw/nexus_platform.h>
-#include <refsw/nexus_memory.h>
-#include <refsw/bstd.h>           /* brcm includes */
-#include <refsw/bkni.h>
+#if __BYTE_ORDER == __BIG_ENDIAN
+#  define TARGET_LITTLE_ENDIAN 1
+#elif __BYTE_ORDER == __LITTLE_ENDIAN
+#  define TARGET_LITTLE_ENDIAN 0
+#endif
 
-#include <refsw/oemcommon.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/drmtypes.h>
-#include <refsw/drmerr.h>
+#ifndef TARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS
+#  define TARGET_SUPPORTS_UNALIGNED_DWORD_POINTERS 0
+#endif
+
+#include <cdmi.h>
+
+#include <nexus_config.h>
+#include <nxclient.h>
+#include <nexus_platform.h>
+#include <nexus_memory.h>
+#include <bstd.h>           /* brcm includes */
+#include <bkni.h>
+
+#include <oemcommon.h>
+#include <drmmanager.h>
+#include <drmmathsafe.h>
+#include <drmtypes.h>
+#include <drmerr.h>
 
 namespace CDMi {
 
@@ -130,8 +143,7 @@ private:
     DRM_BOOL m_fCommit;
     DRM_VOID *m_pOEMContext;
 
-    WPEFramework::Core::CriticalSection _decoderLock;
-
+    std::mutex _decoderLock;
 };
 
 } // namespace CDMi
