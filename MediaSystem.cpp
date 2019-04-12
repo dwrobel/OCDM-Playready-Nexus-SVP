@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
+#include <cstring>
+#include <csignal>
 #include "MediaSession.h"
+#include <drmcompiler.h>
 
 namespace CDMi {
 
@@ -32,35 +35,61 @@ public:
         NEXUS_ClientConfiguration platformConfig;
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_S_FALSE;
+#ifndef PLAYREADY_SAGE
+        uint16_t cchStr = 0;
+#endif
+        BKNI_Memset(&sAllocResults, 0, sizeof(NxClient_AllocResults));
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
-        snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "playready3x");
+        snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "WPEProcess");
+        joinSettings.ignoreStandbyRequest = true;
         rc = NxClient_Join(&joinSettings);
         if (rc) {
-            printf("Couldnt join nxserver\n");
+            printf("Playready: NxClient_Join() failed: %d\n", rc);
             goto ErrorExit;
         }
 
         /* Drm_Platform_Initialize */
         NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
         NEXUS_Platform_GetClientConfiguration(&platformConfig);
-        if (platformConfig.heap[NXCLIENT_FULL_HEAP])
-        {
+
+        NxClient_AllocSettings nxAllocSettings;
+        NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        rc = NxClient_Alloc(&nxAllocSettings, &sAllocResults);
+        if (rc) {
+            printf("Playready: NxClient_Alloc() failed: %d\n", rc);
+            goto ErrorExit;
+        }
+
+        if (platformConfig.heap[NXCLIENT_FULL_HEAP]) {
             NEXUS_HeapHandle heap = platformConfig.heap[NXCLIENT_FULL_HEAP];
             NEXUS_MemoryStatus heapStatus;
             NEXUS_Heap_GetStatus(heap, &heapStatus);
-            if (heapStatus.memoryType & NEXUS_MemoryType_eFull)
-            {
+            printf("Playready: Nexus heap = %p\n", static_cast<void *>(heap));
+            if (heapStatus.memoryType & NEXUS_MemoryType_eFull) {
+                printf("Playready: Nexus using heap = %p at index = %d\n", static_cast<void *>(heap), NXCLIENT_FULL_HEAP);
                 heapSettings.heap = heap;
             }
         }
 
+        waitForDebugger();
+
 #ifndef PLAYREADY_SAGE
         OEM_Settings oemSettings;
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
-        oemSettings.heap = heapSettings.heap;
+
+        oemSettings.heap               = heapSettings.heap;
+        oemSettings.binFileName        = cstringToWChar(OEM_SETTINGS_binFileName);
+        oemSettings.keyHistoryFileName = cstringToWChar(OEM_SETTINGS_keyHistoryFileName);
+        oemSettings.defaultRWDirName   = cstringToWChar(OEM_SETTINGS_defaultRWDirName);
+
+        printf("Playready: Initialization: bin = \"%s\", history = \"%s\", rwDir = \"%s\"\n",
+                OEM_SETTINGS_binFileName,
+                OEM_SETTINGS_keyHistoryFileName,
+                OEM_SETTINGS_defaultRWDirName);
 
         dr = Drm_Platform_Initialize((void *)&oemSettings);
+        printf("Playready: Initialization: dr = 0x%jX\n", static_cast<uintmax_t>(dr));
         ChkDR(dr);
 
         m_drmOemContext = oemSettings.f_pOEMContext;
@@ -76,6 +105,8 @@ ErrorExit:
         if (m_drmOemContext) {
             Drm_Platform_Uninitialize(m_drmOemContext);
         }
+
+        NxClient_Free(&sAllocResults);
     }
 
     CDMi_RESULT CreateMediaKeySession(
@@ -106,8 +137,53 @@ ErrorExit:
         return CDMi_SUCCESS;
     }
 
+protected:
+    DRM_WCHAR* cstringToWChar(const char *src) {
+        DRM_WCHAR* dst = nullptr;
+
+        do {
+            if (src == nullptr) {
+                break;
+            }
+
+            const auto length = strlen(src);
+
+            if (length == 0) {
+                break;
+            }
+
+            dst = reinterpret_cast<DRM_WCHAR *>(Oem_MemAlloc(sizeof(DRM_WCHAR) * (length + 1)));
+
+            if (dst == nullptr) {
+                break;
+            }
+
+            for (size_t i = 0; i < length; i++) {
+                dst[i] = DRM_ONE_WCHAR(src[i], '\0');
+            }
+
+            dst[length] = DRM_ONE_WCHAR('\0', '\0');
+        } while (0);
+
+        return dst;
+    }
+
+    void waitForDebugger() {
+        const bool waitForDebugger = getenv("PLAYREADY_DRM_SIGSTOP") ? true : false;
+        if (waitForDebugger) {
+           const pid_t pid = getpid();
+           printf("Playready: waiting for debugger...\n");
+           printf("Playready: Issue\n");
+           printf("Playready: \t$ gdb -p %u\n", pid);
+           printf("Playready: or\n");
+           printf("Playready: \t$ kill -SIGCONT %u\n", pid);
+           raise(SIGSTOP);
+           printf("Playready: Process %u running...\n", pid);
+        }
+    }
 private:
     DRM_VOID *m_drmOemContext;
+    NxClient_AllocResults sAllocResults;
 };
 
 static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
