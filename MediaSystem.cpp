@@ -14,7 +14,10 @@
  * limitations under the License.
  */
 
+#include <cstring>
+#include <csignal>
 #include "MediaSession.h"
+#include <drmcompiler.h>
 
 namespace CDMi {
 
@@ -32,6 +35,9 @@ public:
         NEXUS_ClientConfiguration platformConfig;
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_S_FALSE;
+#ifndef PLAYREADY_SAGE
+        uint16_t cchStr = 0;
+#endif
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "playready3x");
@@ -44,6 +50,7 @@ public:
         /* Drm_Platform_Initialize */
         NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
         NEXUS_Platform_GetClientConfiguration(&platformConfig);
+
         if (platformConfig.heap[NXCLIENT_FULL_HEAP])
         {
             NEXUS_HeapHandle heap = platformConfig.heap[NXCLIENT_FULL_HEAP];
@@ -58,9 +65,19 @@ public:
 #ifndef PLAYREADY_SAGE
         OEM_Settings oemSettings;
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
-        oemSettings.heap = heapSettings.heap;
+
+        oemSettings.heap               = heapSettings.heap;
+        oemSettings.binFileName        = cstringToWChar(OEM_SETTINGS_binFileName);
+        oemSettings.keyHistoryFileName = cstringToWChar(OEM_SETTINGS_keyHistoryFileName);
+        oemSettings.defaultRWDirName   = cstringToWChar(OEM_SETTINGS_defaultRWDirName);
+
+        printf("Playready: Initialization: bin = \"%s\", history = \"%s\", rwDir = \"%s\"\n",
+                OEM_SETTINGS_binFileName,
+                OEM_SETTINGS_keyHistoryFileName,
+                OEM_SETTINGS_defaultRWDirName);
 
         dr = Drm_Platform_Initialize((void *)&oemSettings);
+        printf("Playready: Initialization: dr = 0x%jX\n", static_cast<uintmax_t>(dr));
         ChkDR(dr);
 
         m_drmOemContext = oemSettings.f_pOEMContext;
@@ -105,6 +122,37 @@ ErrorExit:
         delete f_piMediaKeySession;
 
         return CDMi_SUCCESS;
+    }
+
+protected:
+    DRM_WCHAR* cstringToWChar(const char *src) {
+        DRM_WCHAR* dst = nullptr;
+
+        do {
+            if (src == nullptr) {
+                break;
+            }
+
+            const auto length = strlen(src);
+
+            if (length == 0) {
+                break;
+            }
+
+            dst = reinterpret_cast<DRM_WCHAR *>(Oem_MemAlloc(sizeof(DRM_WCHAR) * (length + 1)));
+
+            if (dst == nullptr) {
+                break;
+            }
+
+            for (size_t i = 0; i < length; i++) {
+                dst[i] = DRM_ONE_WCHAR(src[i], '\0');
+            }
+
+            dst[length] = DRM_ONE_WCHAR('\0', '\0');
+        } while (0);
+
+        return dst;
     }
 
 private:
