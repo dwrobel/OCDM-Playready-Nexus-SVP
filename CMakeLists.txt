@@ -5,10 +5,18 @@ include(GNUInstallDirs)
 set(PLAYREADY_PKG_CONFIG_NAME "playready4" CACHE STRING "Playready pkg-config file name (default: playready4)")
 set(NAMESPACE "WPEFramework" CACHE STRING "Namespace of the project (default: WPEFramework)")
 
+set(OEM_SETTINGS_binFileName        ""
+    CACHE STRING "Optional playready bin file name (full path) (default: none)")
+set(OEM_SETTINGS_keyHistoryFileName ""
+    CACHE STRING "Optional playready history file name (full path) (default: none)")
+set(OEM_SETTINGS_defaultRWDirName   ""
+    CACHE STRING "Optional default directory for all read/write files. (default: none")
+
 set(DRM_PLUGIN_NAME PlayReady)
 
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,defs")
 
 find_package(PkgConfig REQUIRED)
 pkg_search_module(PLAYREADY ${PLAYREADY_PKG_CONFIG_NAME})
@@ -28,6 +36,9 @@ set(DRM_PLUGIN_INCLUDE_DIRS
 set(DRM_PLUGIN_CFLAGS_OTHER
   ${PLAYREADY_CFLAGS_OTHER}
   ${DRM_PLUGIN_CFLAGS_OTHER}
+  -DOEM_SETTINGS_binFileName=\"${OEM_SETTINGS_binFileName}\"
+  -DOEM_SETTINGS_keyHistoryFileName=\"${OEM_SETTINGS_keyHistoryFileName}\"
+  -DOEM_SETTINGS_defaultRWDirName=\"${OEM_SETTINGS_defaultRWDirName}\"
 )
 
 set(DRM_PLUGIN_LIBRARIES
