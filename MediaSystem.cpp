@@ -105,7 +105,7 @@ ErrorExit:
         uint32_t f_cbCDMData, 
         IMediaKeySession **f_ppiMediaKeySession) {
 
-        *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData, m_drmOemContext);
+        *f_ppiMediaKeySession = new CDMi::MediaKeySession(f_pbInitData, f_cbInitData, f_pbCDMData, f_cbCDMData, m_drmOemContext);
 
         return CDMi_SUCCESS; 
     }
