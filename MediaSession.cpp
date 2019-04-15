@@ -379,12 +379,11 @@ DRM_RESULT MediaKeySession::PolicyCallback(
 
 }
 
-MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, DRM_VOID *f_pOEMContext)
+MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext)
         : m_pbOpaqueBuffer(nullptr)
         , m_cbOpaqueBuffer(0)
         , m_pbRevocationBuffer(nullptr)
-        , m_pchCustomData(nullptr)
-        , m_cchCustomData(0)
+        , m_customData(reinterpret_cast<const char*>(f_pbCDMData), f_cbCDMData)
         , m_piCallback(nullptr)
         , m_eKeyState(KEY_CLOSED)
         , m_fCommit(false)
@@ -590,8 +589,8 @@ void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCal
                                           g_rgpdstrRights,
                                           DRM_NO_OF(g_rgpdstrRights),
                                           nullptr,
-                                          m_pchCustomData,
-                                          m_cchCustomData,
+                                          !m_customData.empty() ? m_customData.c_str() : nullptr,
+                                          m_customData.size(),
                                           nullptr,
                                           &cchSilentURL,
                                           nullptr,
@@ -626,8 +625,8 @@ void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCal
                                            g_rgpdstrRights,
                                            DRM_NO_OF(g_rgpdstrRights),
                                            nullptr,
-                                           m_pchCustomData,
-                                           m_cchCustomData,
+                                           !m_customData.empty() ? m_customData.c_str() : nullptr,
+                                           m_customData.size(),
                                            pchSilentURL,
                                            &cchSilentURL,
                                            nullptr,
@@ -648,7 +647,7 @@ ErrorExit:
     {
         if (m_piCallback != nullptr)
         {
-            m_piCallback->OnKeyError(MapCDMiError(dr), dr, "KeyError");
+            m_piCallback->OnKeyMessage((const uint8_t *) "", 0, (char *) "");
             m_eKeyState = KEY_ERROR;
         }
     }
@@ -735,8 +734,7 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
 ErrorExit:
     if (DRM_FAILED(dr))
     {
-
-        m_piCallback->OnKeyError(MapCDMiError(dr), dr, "KeyError");
+        m_piCallback->OnKeyStatusUpdate("KeyError", nullptr, 0);
         printf("Playready failed processing license response\n");
         m_eKeyState = KEY_ERROR;
     }
