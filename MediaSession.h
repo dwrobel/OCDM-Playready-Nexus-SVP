@@ -57,7 +57,7 @@ private:
 public:
     //static const std::vector<std::string> m_mimeTypes;
 
-    MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, DRM_VOID *f_pOEMContext);
+    MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext);
     ~MediaKeySession();
     bool playreadyGenerateKeyRequest();
     bool ready() const { return m_eKeyState == KEY_READY; }
@@ -119,8 +119,7 @@ private:
 
     DRM_BYTE *m_pbRevocationBuffer;
 
-    DRM_CHAR *m_pchCustomData;
-    DRM_DWORD m_cchCustomData;
+    std::string m_customData;
 
     IMediaKeySessionCallback *m_piCallback;
     KeyState m_eKeyState;
