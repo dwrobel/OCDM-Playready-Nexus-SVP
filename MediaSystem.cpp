@@ -35,9 +35,7 @@ public:
         NEXUS_ClientConfiguration platformConfig;
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_S_FALSE;
-#ifndef PLAYREADY_SAGE
-        uint16_t cchStr = 0;
-#endif
+
         BKNI_Memset(&sAllocResults, 0, sizeof(NxClient_AllocResults));
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
@@ -71,8 +69,6 @@ public:
                 heapSettings.heap = heap;
             }
         }
-
-        waitForDebugger();
 
 #ifndef PLAYREADY_SAGE
         OEM_Settings oemSettings;
@@ -167,20 +163,7 @@ protected:
 
         return dst;
     }
-
-    void waitForDebugger() {
-        const bool waitForDebugger = getenv("PLAYREADY_DRM_SIGSTOP") ? true : false;
-        if (waitForDebugger) {
-           const pid_t pid = getpid();
-           printf("Playready: waiting for debugger...\n");
-           printf("Playready: Issue\n");
-           printf("Playready: \t$ gdb -p %u\n", pid);
-           printf("Playready: or\n");
-           printf("Playready: \t$ kill -SIGCONT %u\n", pid);
-           raise(SIGSTOP);
-           printf("Playready: Process %u running...\n", pid);
-        }
-    }
+    
 private:
     DRM_VOID *m_drmOemContext;
     NxClient_AllocResults sAllocResults;
