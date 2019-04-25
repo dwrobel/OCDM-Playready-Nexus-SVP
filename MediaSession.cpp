@@ -241,9 +241,9 @@ int16_t MediaKeySession::MapCDMiError(CDMi_RESULT f_crError)
 
     switch (f_crError)
     {
-        case CDMi_E_SERVER_INTERNAL_ERROR:
-        case CDMi_E_SERVER_INVALID_MESSAGE:
-        case CDMi_E_SERVER_SERVICE_SPECIFIC:
+        case CDMi_SERVER_INTERNAL_ERROR:
+        case CDMi_SERVER_INVALID_MESSAGE:
+        case CDMi_SERVER_SERVICE_SPECIFIC:
             nError = MEDIA_KEYERR_SERVICE;
             break;
 
@@ -773,6 +773,11 @@ CDMi_RESULT MediaKeySession::Close(void)
     }
 }
 
+void MediaKeySession::UninitializeContext()
+{
+  // TODO:
+}
+
 CDMi_RESULT MediaKeySession::Decrypt(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
@@ -785,7 +790,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
         uint32_t *f_pcbOpaqueClearContent,
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t /* keyIdLength */,
-        const uint8_t* /* keyId */)
+        const uint8_t* /* keyId */,
+        bool initWithLast15)
 
 {
     DRM_RESULT dr = DRM_SUCCESS;

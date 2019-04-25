@@ -67,20 +67,22 @@ public:
 
 // MediaKeySession overrides
     virtual void Run(
-        const IMediaKeySessionCallback *f_piMediaKeySessionCallback);
+        const IMediaKeySessionCallback *f_piMediaKeySessionCallback) override;
 
-    virtual CDMi_RESULT Load();
+    virtual CDMi_RESULT Load() override;
 
     virtual void Update(
         const uint8_t *f_pbKeyMessageResponse,
-        uint32_t f_cbKeyMessageResponse);
+        uint32_t f_cbKeyMessageResponse) override;
 
-    virtual CDMi_RESULT Remove();
+    virtual CDMi_RESULT Remove() override;
 
-    virtual CDMi_RESULT Close(void);
+    virtual CDMi_RESULT Close(void) override;
 
-    virtual const char *GetSessionId(void) const;
-    virtual const char *GetKeySystem(void) const;
+    virtual void UninitializeContext() override;
+
+    virtual const char *GetSessionId(void) const override;
+    virtual const char *GetKeySystem(void) const override;
     virtual CDMi_RESULT Decrypt(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
@@ -93,13 +95,14 @@ public:
         uint32_t *f_pcbOpaqueClearContent,
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t keyIdLength,
-        const uint8_t* keyId);
+        const uint8_t* keyId,
+        bool initWithLast15) override;
 
     virtual CDMi_RESULT ReleaseClearContent(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
         const uint32_t  f_cbClearContentOpaque,
-        uint8_t  *f_pbClearContentOpaque );
+        uint8_t  *f_pbClearContentOpaque ) override;
 
 private:
     bool LoadRevocationList(const char *revListFile);
