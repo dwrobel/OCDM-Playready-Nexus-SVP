@@ -90,13 +90,16 @@ public:
         uint32_t *f_pcbOpaqueClearContent,
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t keyIdLength,
-        const uint8_t* keyId);
+        const uint8_t* keyId,
+        bool initWithLast15);
 
     virtual CDMi_RESULT ReleaseClearContent(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
         const uint32_t  f_cbClearContentOpaque,
         uint8_t  *f_pbClearContentOpaque );
+
+    virtual void UninitializeContext();
 
 private:
     bool LoadRevocationList(const char *revListFile);

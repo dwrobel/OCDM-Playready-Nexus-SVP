@@ -794,7 +794,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
         uint32_t *f_pcbOpaqueClearContent,
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t /* keyIdLength */,
-        const uint8_t* /* keyId */)
+        const uint8_t* /* keyId */,
+        bool /* initWithLast15 */)
 
 {
     DRM_RESULT dr = DRM_SUCCESS;
@@ -887,6 +888,10 @@ CDMi_RESULT MediaKeySession::ReleaseClearContent(
 {
 
   return CDMi_SUCCESS;
+}
+
+void MediaKeySession::UninitializeContext()
+{
 }
 
 #define MAX_TIME_CHALLENGE_RESPONSE_LENGTH (1024*64)
