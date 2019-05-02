@@ -99,8 +99,6 @@ public:
         const uint32_t  f_cbClearContentOpaque,
         uint8_t  *f_pbClearContentOpaque );
 
-    virtual void UninitializeContext();
-
 private:
     bool LoadRevocationList(const char *revListFile);
 

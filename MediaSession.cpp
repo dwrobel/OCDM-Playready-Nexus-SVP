@@ -890,10 +890,6 @@ CDMi_RESULT MediaKeySession::ReleaseClearContent(
   return CDMi_SUCCESS;
 }
 
-void MediaKeySession::UninitializeContext()
-{
-}
-
 #define MAX_TIME_CHALLENGE_RESPONSE_LENGTH (1024*64)
 #define MAX_URL_LENGTH (512)
 
