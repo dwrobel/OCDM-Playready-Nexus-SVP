@@ -102,9 +102,6 @@ public:
 private:
     bool LoadRevocationList(const char *revListFile);
 
-    // Map PlayReady specific CDMi error to one of the EME errors.
-    int16_t MapCDMiError(CDMi_RESULT f_crError);
-
     static DRM_RESULT PolicyCallback(
             const DRM_VOID *f_pvOutputLevelsData,
             DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,

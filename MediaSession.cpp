@@ -239,28 +239,6 @@ ErrorExit:
     return false;
 }
 
-// Map PlayReady specific CDMi error to one of the EME errors.
-int16_t MediaKeySession::MapCDMiError(CDMi_RESULT f_crError)
-{
-    int16_t nError = MEDIA_KEYERR_UNKNOWN;
-
-    switch (f_crError)
-    {
-        case CDMi_E_SERVER_INTERNAL_ERROR:
-        case CDMi_E_SERVER_INVALID_MESSAGE:
-        case CDMi_E_SERVER_SERVICE_SPECIFIC:
-            nError = MEDIA_KEYERR_SERVICE;
-            break;
-
-        case CDMi_SUCCESS:
-        case CDMi_S_FALSE:
-            nError = 0;
-            break;
-    }
-
-    return nError;
-}
-
 // PlayReady license policy callback which should be
 // customized for platform/environment that hosts the CDM.
 // It is currently implemented as a place holder that
@@ -648,7 +626,7 @@ ErrorExit:
     {
         if (m_piCallback != nullptr)
         {
-            m_piCallback->OnKeyError(MapCDMiError(dr), dr, "KeyError");
+            m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
             m_eKeyState = KEY_ERROR;
         }
     }
@@ -736,7 +714,7 @@ ErrorExit:
     if (DRM_FAILED(dr))
     {
 
-        m_piCallback->OnKeyError(MapCDMiError(dr), dr, "KeyError");
+        m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
         printf("Playready failed processing license response\n");
         m_eKeyState = KEY_ERROR;
     }
