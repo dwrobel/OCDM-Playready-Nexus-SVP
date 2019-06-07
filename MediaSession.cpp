@@ -53,6 +53,7 @@ struct Rpc_Secbuf_Info {
     uint32_t type;
     size_t   size;
     void    *token;
+    void    *token_enc;
     uint32_t subsamples_count;
     uint32_t subsamples[];
 };
@@ -784,8 +785,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
 #if NEXUS_PLAYREADY_SVP_ENABLE
     DRM_BYTE *desc = nullptr;
-    Rpc_Secbuf_Info *RPCsecureBufferInfo;
-    B_Secbuf_Info   BsecureBufferInfo;
+    Rpc_Secbuf_Info *pRPCsecureBufferInfo;
+    B_Secbuf_Info   secureBufferInfo;
 #endif
 
     // The current state MUST be KEY_READY otherwise error out.
@@ -802,26 +803,38 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
 #if NEXUS_PLAYREADY_SVP_ENABLE
 
-    void *pOpaqueData;
+    void *pOpaqueData, *pOpaqueDataEnc;
 
-    RPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
-    ::memcpy(RPCsecureBufferInfo, payloadData, payloadDataSize);
+    pRPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
+    ::memcpy(pRPCsecureBufferInfo, payloadData, payloadDataSize);
 
-    if (B_Secbuf_AllocWithToken(RPCsecureBufferInfo->size, (B_Secbuf_Type)RPCsecureBufferInfo->type, RPCsecureBufferInfo->token, &pOpaqueData)) {
+    if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
         printf("B_Secbuf_AllocWithToken() failed!\n");
+        goto ErrorExit;
     } else {
-        payloadDataSize = RPCsecureBufferInfo->size;
-        //printf("B_Secbuf_AllocWithToken() succeeded. size:%d clear:%d type:%d token:%p ptr:%p %s:%d \n",sb_info.size, sb_info.clear_size, (B_Secbuf_Type)sb_info.type, sb_info.token,pOpaqueData, __FUNCTION__,__LINE__);
+        // Update token for WPE to get the secure buffer
+        B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
+        pRPCsecureBufferInfo->token = secureBufferInfo.token;
+        ::memcpy((void*)payloadData, pRPCsecureBufferInfo, payloadDataSize);
+
+        // Update payloadDataSize to the buffer size
+        payloadDataSize = pRPCsecureBufferInfo->size;
     }
+    if (B_Secbuf_AllocWithToken(pRPCsecureBufferInfo->size, B_Secbuf_Type_eGeneric, pRPCsecureBufferInfo->token_enc, &pOpaqueDataEnc)) {
+        printf("B_Secbuf_AllocWithToken() failed!\n");
+        goto ErrorExit;
+    }
+    // copy all samples data including clear one too
+    B_Secbuf_ImportData(pOpaqueData, 0, (unsigned char*)pOpaqueDataEnc, pRPCsecureBufferInfo->size, 1);
 
      _decoderLock.Lock();
      if (Drm_Reader_DecryptOpaque(
             &m_oDecryptContext,
-            RPCsecureBufferInfo->subsamples_count,
-            RPCsecureBufferInfo->subsamples,
+            pRPCsecureBufferInfo->subsamples_count,
+            pRPCsecureBufferInfo->subsamples,
             oAESContext.qwInitializationVector,
             payloadDataSize,
-            (DRM_BYTE*)pOpaqueData,
+            (DRM_BYTE*)pOpaqueDataEnc,
             (DRM_DWORD*)&payloadDataSize,
             (DRM_BYTE**)&pOpaqueData) == DRM_SUCCESS) {
 
@@ -832,8 +845,11 @@ CDMi_RESULT MediaKeySession::Decrypt(
                     m_fCommit = TRUE;
             }
 
-            B_Secbuf_Free(pOpaqueData);
-            ::free(RPCsecureBufferInfo);
+            // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
+            B_Secbuf_FreeDesc(pOpaqueData);
+            // Encrypted data does not need anymore, freeing
+            B_Secbuf_Free(pOpaqueDataEnc);
+            ::free(pRPCsecureBufferInfo);
 
             // Return clear content.
             *f_pcbOpaqueClearContent = 0;
@@ -844,8 +860,11 @@ CDMi_RESULT MediaKeySession::Decrypt(
     }
     else {
         printf("Drm_Reader_DecryptOpaque is failed -----> \n");
-        ::free(RPCsecureBufferInfo);
-        B_Secbuf_Free(pOpaqueData);
+        ::free(pRPCsecureBufferInfo);
+        // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
+        B_Secbuf_FreeDesc(pOpaqueData);
+        // Encrypted data does not need anymore, freeing
+        B_Secbuf_Free(pOpaqueDataEnc);
         _decoderLock.Unlock();
         return CDMi_S_FALSE;
     }
