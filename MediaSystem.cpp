@@ -62,6 +62,8 @@ public:
             }
         }
 
+        waitForDebugger();
+
 #ifndef PLAYREADY_SAGE
         OEM_Settings oemSettings;
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
@@ -155,6 +157,19 @@ protected:
         return dst;
     }
 
+    void waitForDebugger() {
+        const bool waitForDebugger = getenv("PLAYREADY_DRM_SIGSTOP") ? true : false;
+        if (waitForDebugger) {
+           const pid_t pid = getpid();
+           printf("Playready: waiting for debugger...\n");
+           printf("Playready: Issue\n");
+           printf("Playready: \t$ gdb -p %u\n", pid);
+           printf("Playready: or\n");
+           printf("Playready: \t$ kill -SIGCONT %u\n", pid);
+           raise(SIGSTOP);
+           printf("Playready: Process %u running...\n", pid);
+        }
+    }
 private:
     DRM_VOID *m_drmOemContext;
 };
