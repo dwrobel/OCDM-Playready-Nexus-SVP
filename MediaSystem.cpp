@@ -38,12 +38,14 @@ public:
 #ifndef PLAYREADY_SAGE
         uint16_t cchStr = 0;
 #endif
+        BKNI_Memset(&sAllocResults, 0, sizeof(NxClient_AllocResults));
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
-        snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "playready3x");
+        snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "WPEProcess");
+        joinSettings.ignoreStandbyRequest = true;
         rc = NxClient_Join(&joinSettings);
         if (rc) {
-            printf("Couldnt join nxserver\n");
+            printf("Playready: NxClient_Join() failed: %d\n", rc);
             goto ErrorExit;
         }
 
@@ -51,13 +53,21 @@ public:
         NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
         NEXUS_Platform_GetClientConfiguration(&platformConfig);
 
-        if (platformConfig.heap[NXCLIENT_FULL_HEAP])
-        {
+        NxClient_AllocSettings nxAllocSettings;
+        NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        rc = NxClient_Alloc(&nxAllocSettings, &sAllocResults);
+        if (rc) {
+            printf("Playready: NxClient_Alloc() failed: %d\n", rc);
+            goto ErrorExit;
+        }
+
+        if (platformConfig.heap[NXCLIENT_FULL_HEAP]) {
             NEXUS_HeapHandle heap = platformConfig.heap[NXCLIENT_FULL_HEAP];
             NEXUS_MemoryStatus heapStatus;
             NEXUS_Heap_GetStatus(heap, &heapStatus);
-            if (heapStatus.memoryType & NEXUS_MemoryType_eFull)
-            {
+            printf("Playready: Nexus heap = %p\n", static_cast<void *>(heap));
+            if (heapStatus.memoryType & NEXUS_MemoryType_eFull) {
+                printf("Playready: Nexus using heap = %p at index = %d\n", static_cast<void *>(heap), NXCLIENT_FULL_HEAP);
                 heapSettings.heap = heap;
             }
         }
@@ -95,6 +105,8 @@ ErrorExit:
         if (m_drmOemContext) {
             Drm_Platform_Uninitialize(m_drmOemContext);
         }
+
+        NxClient_Free(&sAllocResults);
     }
 
     CDMi_RESULT CreateMediaKeySession(
@@ -172,6 +184,7 @@ protected:
     }
 private:
     DRM_VOID *m_drmOemContext;
+    NxClient_AllocResults sAllocResults;
 };
 
 static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
