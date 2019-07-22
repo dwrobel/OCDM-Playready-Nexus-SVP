@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2018 Metrological
+ * Copyright 2017-2019 Metrological
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,21 +16,24 @@
 
 #pragma once
 
-#include "cdmi.h"
-#include <core/core.h>
+#include <iostream>
+#include <mutex>
 
-#include <refsw/nexus_config.h>
-#include <refsw/nxclient.h>
-#include <refsw/nexus_platform.h>
-#include <refsw/nexus_memory.h>
-#include <refsw/bstd.h>           /* brcm includes */
-#include <refsw/bkni.h>
+#include <cdmi.h>
 
-#include <refsw/oemcommon.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/drmtypes.h>
-#include <refsw/drmerr.h>
+#include <nexus_config.h>
+#include <nxclient.h>
+#include <nexus_platform.h>
+#include <nexus_memory.h>
+
+#include <bstd.h>           /* brcm includes */
+#include <bkni.h>
+
+#include <oemcommon.h>
+#include <drmmanager.h>
+#include <drmmathsafe.h>
+#include <drmtypes.h>
+#include <drmerr.h>
 
 namespace CDMi {
 
@@ -64,20 +67,20 @@ public:
 
 // MediaKeySession overrides
     virtual void Run(
-        const IMediaKeySessionCallback *f_piMediaKeySessionCallback);
+        const IMediaKeySessionCallback *f_piMediaKeySessionCallback) override;
 
-    virtual CDMi_RESULT Load();
+    virtual CDMi_RESULT Load() override;
 
     virtual void Update(
         const uint8_t *f_pbKeyMessageResponse,
-        uint32_t f_cbKeyMessageResponse);
+        uint32_t f_cbKeyMessageResponse) override;
 
-    virtual CDMi_RESULT Remove();
+    virtual CDMi_RESULT Remove() override;
 
-    virtual CDMi_RESULT Close(void);
+    virtual CDMi_RESULT Close(void) override;
 
-    virtual const char *GetSessionId(void) const;
-    virtual const char *GetKeySystem(void) const;
+    virtual const char *GetSessionId(void) const override;
+    virtual const char *GetKeySystem(void) const override;
     virtual CDMi_RESULT Decrypt(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
@@ -90,19 +93,17 @@ public:
         uint32_t *f_pcbOpaqueClearContent,
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t keyIdLength,
-        const uint8_t* keyId);
+        const uint8_t* keyId,
+        bool initWithLast15) override;
 
     virtual CDMi_RESULT ReleaseClearContent(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
         const uint32_t  f_cbClearContentOpaque,
-        uint8_t  *f_pbClearContentOpaque );
+        uint8_t  *f_pbClearContentOpaque ) override;
 
 private:
     bool LoadRevocationList(const char *revListFile);
-
-    // Map PlayReady specific CDMi error to one of the EME errors.
-    int16_t MapCDMiError(CDMi_RESULT f_crError);
 
     static DRM_RESULT PolicyCallback(
             const DRM_VOID *f_pvOutputLevelsData,
@@ -129,8 +130,7 @@ private:
     DRM_BOOL m_fCommit;
     DRM_VOID *m_pOEMContext;
 
-    WPEFramework::Core::CriticalSection _decoderLock;
-
+    std::mutex _decoderLock;
 };
 
 } // namespace CDMi
