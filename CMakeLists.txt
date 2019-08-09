@@ -1,7 +1,5 @@
 cmake_minimum_required(VERSION 3.3)
 
-option(NEXUS_PLAYREADY_SVP_ENABLE "SAGE/SVP is enabled" OFF)
-
 set(DRM_PLUGIN_NAME PlayReady)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
@@ -39,13 +37,6 @@ target_link_libraries(${DRM_PLUGIN_NAME}
         NXCLIENT::NXCLIENT
         NexusPlayready::NexusPlayready
 )
-
-if (NEXUS_PLAYREADY_SVP_ENABLE)
-    target_compile_definitions(${DRM_PLUGIN_NAME} 
-        PRIVATE 
-            NEXUS_PLAYREADY_SVP_ENABLE
-    )
-endif()
 
 install(TARGETS ${DRM_PLUGIN_NAME} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/${NAMESPACE}/OCDM)
 

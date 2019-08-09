@@ -46,7 +46,6 @@
 // ~100 KB to start * 64 (2^6) ~= 6.4 MB, don't allocate more than ~6.4 MB
 #define DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ( 64 * MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE )
 
-#ifdef NEXUS_PLAYREADY_SVP_ENABLE
 #include <b_secbuf.h>
 
 struct Rpc_Secbuf_Info {
@@ -57,8 +56,6 @@ struct Rpc_Secbuf_Info {
     uint32_t subsamples_count;
     uint32_t subsamples[];
 };
-
-#endif
 
 using namespace std;
 
@@ -775,7 +772,6 @@ CDMi_RESULT MediaKeySession::Decrypt(
         const uint8_t /* keyIdLength */,
         const uint8_t* /* keyId */,
         bool /* initWithLast15 */)
-
 {
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
@@ -783,11 +779,9 @@ CDMi_RESULT MediaKeySession::Decrypt(
     DRM_DWORD cbData = 0;
     NEXUS_Error rc = NEXUS_SUCCESS;
 
-#if NEXUS_PLAYREADY_SVP_ENABLE
     DRM_BYTE *desc = nullptr;
     Rpc_Secbuf_Info *pRPCsecureBufferInfo;
     B_Secbuf_Info   secureBufferInfo;
-#endif
 
     // The current state MUST be KEY_READY otherwise error out.
     ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
@@ -800,8 +794,6 @@ CDMi_RESULT MediaKeySession::Decrypt(
         oAESContext.qwInitializationVector <<= 8;
         oAESContext.qwInitializationVector += f_pbIV[i];
     }
-
-#if NEXUS_PLAYREADY_SVP_ENABLE
 
     void *pOpaqueData, *pOpaqueDataEnc;
 
@@ -868,11 +860,6 @@ CDMi_RESULT MediaKeySession::Decrypt(
         _decoderLock.Unlock();
         return CDMi_S_FALSE;
     }
-
-#else
-	printf("Playready 3.0 support of None-SVP, not implemented yet!\n");
-#endif
-
 ErrorExit:
     return CDMi_S_FALSE;
 }
