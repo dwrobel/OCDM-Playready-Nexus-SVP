@@ -19,18 +19,18 @@
 #include "cdmi.h"
 #include <core/core.h>
 
-#include <refsw/nexus_config.h>
-#include <refsw/nxclient.h>
-#include <refsw/nexus_platform.h>
-#include <refsw/nexus_memory.h>
-#include <refsw/bstd.h>           /* brcm includes */
-#include <refsw/bkni.h>
+#include <nexus_config.h>
+#include <nxclient.h>
+#include <nexus_platform.h>
+#include <nexus_memory.h>
+#include <bstd.h>           /* brcm includes */
+#include <bkni.h>
 
-#include <refsw/oemcommon.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/drmtypes.h>
-#include <refsw/drmerr.h>
+#include <oemcommon.h>
+#include <drmmanager.h>
+#include <drmmathsafe.h>
+#include <drmtypes.h>
+#include <drmerr.h>
 
 namespace CDMi {
 

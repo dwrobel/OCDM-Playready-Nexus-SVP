@@ -23,23 +23,23 @@
 #include <vector>
 #include <sys/utsname.h>
 
-#include <refsw/nexus_random_number.h>
+#include <nexus_random_number.h>
 
-#include <refsw/drmbuild_oem.h>
-#include <refsw/drmnamespace.h>
-#include <refsw/drmbytemanip.h>
-#include <refsw/drmmanager.h>
-#include <refsw/drmbase64.h>
-#include <refsw/drmsoapxmlutility.h>
-#include <refsw/oemcommon.h>
-#include <refsw/drmconstants.h>
-#include <refsw/drmsecuretime.h>
-#include <refsw/drmsecuretimeconstants.h>
-#include <refsw/drmrevocation.h>
-#include <refsw/drmxmlparser.h>
-#include <refsw/drmmathsafe.h>
-#include <refsw/prdy_http.h>
-#include <refsw/drm_data.h>
+#include <drmbuild_oem.h>
+#include <drmnamespace.h>
+#include <drmbytemanip.h>
+#include <drmmanager.h>
+#include <drmbase64.h>
+#include <drmsoapxmlutility.h>
+#include <oemcommon.h>
+#include <drmconstants.h>
+#include <drmsecuretime.h>
+#include <drmsecuretimeconstants.h>
+#include <drmrevocation.h>
+#include <drmxmlparser.h>
+#include <drmmathsafe.h>
+#include <prdy_http.h>
+#include <drm_data.h>
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -47,7 +47,7 @@
 #define DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ( 64 * MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE )
 
 #ifdef NEXUS_PLAYREADY_SVP_ENABLE
-#include <refsw/b_secbuf.h>
+#include <b_secbuf.h>
 
 struct Rpc_Secbuf_Info {
     uint32_t type;
