@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.3)
 
+project(DRMPlayreadySVP)
+
 set(DRM_PLUGIN_NAME PlayReady)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
