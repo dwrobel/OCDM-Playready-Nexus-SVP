@@ -25,9 +25,11 @@ private:
     PlayReady& operator= (const PlayReady&) = delete;
 
 public:
-    PlayReady() {
-
+    PlayReady() 
+        : m_drmOemContext(nullptr)
+        , m_nxAllocResults() {
         NxClient_JoinSettings joinSettings;
+        NxClient_AllocSettings nxAllocSettings;
         NEXUS_Error rc;
         NEXUS_ClientConfiguration platformConfig;
         OEM_Settings         oemSettings;
@@ -36,9 +38,18 @@ public:
 
         NxClient_GetDefaultJoinSettings(&joinSettings);
         snprintf(joinSettings.name, NXCLIENT_MAX_NAME, "playready3x");
+        joinSettings.ignoreStandbyRequest = true;
         rc = NxClient_Join(&joinSettings);
         if (rc) {
             printf("Couldnt join nxserver\n");
+            goto ErrorExit;
+        }
+
+        NxClient_GetDefaultAllocSettings(&nxAllocSettings);
+        rc = NxClient_Alloc(&nxAllocSettings, &m_nxAllocResults);
+        
+        if (rc) {
+            printf("NxClient_Alloc failed\n");
             goto ErrorExit;
         }
 
@@ -59,8 +70,7 @@ public:
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
         oemSettings.heap = heapSettings.heap;
 
-        dr = Drm_Platform_Initialize((void *)&oemSettings);
-        ChkDR(dr);
+        ChkDR(Drm_Platform_Initialize((void *)&oemSettings));
 
         m_drmOemContext = oemSettings.f_pOEMContext;
         ChkMem(m_drmOemContext);
@@ -73,6 +83,8 @@ ErrorExit:
     }
 
     ~PlayReady(void) {
+        NxClient_Free(&m_nxAllocResults);
+        NxClient_Uninit();
 
         Drm_Platform_Uninitialize(m_drmOemContext);
     }
@@ -100,7 +112,7 @@ ErrorExit:
     }
 
     CDMi_RESULT DestroyMediaKeySession(IMediaKeySession *f_piMediaKeySession) {
-
+ 
         delete f_piMediaKeySession;
 
         return CDMi_SUCCESS;
@@ -108,6 +120,7 @@ ErrorExit:
 
 private:
     DRM_VOID *m_drmOemContext;
+    NxClient_AllocResults m_nxAllocResults;
 };
 
 static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
