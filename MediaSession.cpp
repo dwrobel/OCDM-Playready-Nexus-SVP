@@ -354,8 +354,10 @@ DRM_RESULT MediaKeySession::PolicyCallback(
 
 }
 
-MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext)
-        : m_pbOpaqueBuffer(nullptr)
+ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext)
+        : m_poAppContext(nullptr)
+        , m_oDecryptContext(nullptr)
+        , m_pbOpaqueBuffer(nullptr)
         , m_cbOpaqueBuffer(0)
         , m_pbRevocationBuffer(nullptr)
         , m_customData(reinterpret_cast<const char*>(f_pbCDMData), f_cbCDMData)
@@ -363,9 +365,16 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
         , m_eKeyState(KEY_CLOSED)
         , m_fCommit(false)
         , m_pOEMContext(f_pOEMContext)
-        , _decoderLock() {
+        , _decoderLock() 
+        , mDrmHeader()
+        , m_SessionId()
+        , mBatchId()
+        , mLicenseIds()
+        , mKeyIds()
+        , m_decryptInited(false){
 
     LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
+    m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
             
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
@@ -660,7 +669,7 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
                             DRM_NO_OF(g_rgpdstrRights),
                             PolicyCallback,
                             nullptr,
-                            &m_oDecryptContext)) == DRM_E_BUFFERTOOSMALL) {
+                            m_oDecryptContext)) == DRM_E_BUFFERTOOSMALL) {
             uint8_t *pbNewOpaqueBuffer = nullptr;
             m_cbOpaqueBuffer *= 2;
 
@@ -732,9 +741,10 @@ CDMi_RESULT MediaKeySession::Close(void)
     // The current state MUST be KEY_PENDING otherwise do nothing.
     if (m_eKeyState != KEY_CLOSED)
     {       
-        if (m_eKeyState == KEY_READY)
-        {
-            Drm_Reader_Close(&m_oDecryptContext);
+        if (m_oDecryptContext) {
+            Drm_Reader_Close(m_oDecryptContext);
+            delete m_oDecryptContext;
+            m_oDecryptContext = nullptr;
         }
 
         Drm_Uninitialize(m_poAppContext);
@@ -773,7 +783,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
     DRM_RESULT dr = DRM_SUCCESS;
     CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
-    Rpc_Secbuf_Info *pRPCsecureBufferInfo;
+    Rpc_Secbuf_Info *pRPCsecureBufferInfo = nullptr;
     B_Secbuf_Info   secureBufferInfo;
     void *pOpaqueData = nullptr;
     void *pOpaqueDataEnc = nullptr;
@@ -816,7 +826,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
    _decoderLock.Lock();
     ChkDR( Drm_Reader_DecryptOpaque(
-            &m_oDecryptContext,
+            m_oDecryptContext,
             pRPCsecureBufferInfo->subsamples_count,
             pRPCsecureBufferInfo->subsamples,
             oAESContext.qwInitializationVector,
@@ -837,7 +847,9 @@ ErrorExit:
         LOGGER(LERROR_, "Decryption failed (error: 0x%08X)", static_cast<uint32_t>(dr));
     }
 
-    ::free(pRPCsecureBufferInfo);
+    if(pRPCsecureBufferInfo != nullptr){
+        ::free(pRPCsecureBufferInfo);
+    }
 
     // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
     if(pOpaqueData != nullptr){

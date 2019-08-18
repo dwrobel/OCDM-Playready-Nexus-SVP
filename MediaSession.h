@@ -18,6 +18,7 @@
 
 #include "cdmi.h"
 #include <core/core.h>
+#include <vector>
 
 #include <nexus_config.h>
 #include <nxclient.h>
@@ -45,6 +46,13 @@ enum LogLevel {
         }while( 0 )
 
 namespace CDMi {
+struct PlayLevels {
+    uint16_t compressedDigitalVideoLevel_;   //!< Compressed digital video output protection level.
+    uint16_t uncompressedDigitalVideoLevel_; //!< Uncompressed digital video output protection level.
+    uint16_t analogVideoLevel_;              //!< Analog video output protection level.
+    uint16_t compressedDigitalAudioLevel_;   //!< Compressed digital audio output protection level.
+    uint16_t uncompressedDigitalAudioLevel_; //!< Uncompressed digital audio output protection level.
+};
 
 class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
 private:
@@ -131,9 +139,12 @@ private:
 
     int InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx);
 
+    std::vector<unsigned char> drmIdToVectorId(const DRM_ID *drmId);
+    string vectorToHexString(const std::vector<uint8_t>& vec);
+
 private:
     DRM_APP_CONTEXT *m_poAppContext;
-    DRM_DECRYPT_CONTEXT m_oDecryptContext;
+    DRM_DECRYPT_CONTEXT *m_oDecryptContext; 
     DRM_BYTE *m_pbOpaqueBuffer;
     DRM_DWORD m_cbOpaqueBuffer;
 
@@ -149,6 +160,12 @@ private:
 
     WPEFramework::Core::CriticalSection _decoderLock;
 
+    std::vector<uint8_t> mDrmHeader;
+    uint32_t m_SessionId;
+    std::vector<uint8_t> mBatchId;
+    std::vector<std::vector<uint8_t>>  mLicenseIds;
+    std::vector<std::vector<uint8_t>>  mKeyIds;
+    bool m_decryptInited;
 };
 
 } // namespace CDMi
