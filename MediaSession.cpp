@@ -57,8 +57,6 @@ struct Rpc_Secbuf_Info {
     uint32_t subsamples[];
 };
 
-using namespace std;
-
 namespace CDMi {
 
     static const char *DRM_DEFAULT_REVOCATION_LIST_FILE="/tmp/revpackage.xml";
@@ -371,8 +369,6 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     DRM_DWORD cchEncodedSessionID = sizeof(m_rgchSessionID);
     DRM_WCHAR          rgwchHDSPath[ DRM_MAX_PATH ];
     DRM_CONST_STRING   dstrHDSPath = DRM_EMPTY_DRM_STRING;
-    NEXUS_ClientConfiguration platformConfig;
-    OEM_Settings         oemSettings;
     std::string playreadyInitData;
     DRM_WCHAR           *hdsDir = bdrm_get_hds_dir();
     DRM_WCHAR           *hdsFname = bdrm_get_pr3x_hds_fname();
@@ -466,7 +462,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
     else
     {
         if (dr != 0) {
-            printf("%d Expect platform to support Secure Clock or Anti-Rollback Clock.  Possible certificate error.%u:%d\n",
+             printf("%d Expect platform to support Secure Clock or Anti-Rollback Clock.  Possible certificate error.%u:%d\n",
                    __LINE__, dr, dr);
             goto ErrorExit;
         }
@@ -504,15 +500,11 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
     /* set encryption/decryption mode */
     dwEncryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
-    dr = Drm_Content_SetProperty(
+    ChkDR(Drm_Content_SetProperty(
             m_poAppContext,
             DRM_CSP_DECRYPTION_OUTPUT_MODE,
             (const DRM_BYTE*)&dwEncryptionMode,
-            sizeof( DRM_DWORD ) );
-    if ( dr != DRM_SUCCESS ) {
-        printf("Drm_Content_SetProperty() failed, exiting");
-        goto ErrorExit;
-    }
+            sizeof( DRM_DWORD ) ) );
 
     m_eKeyState = KEY_INIT;
 
@@ -520,6 +512,7 @@ ErrorExit:
     if (DRM_FAILED(dr))
     {
         m_eKeyState = KEY_ERROR;
+        printf("Drm_Content_SetProperty() failed, exiting");
     }
 }
 
@@ -549,74 +542,73 @@ void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCal
     DRM_DWORD cbChallenge = 0;
     DRM_CHAR *pchSilentURL = nullptr;
     DRM_DWORD cchSilentURL = 0;
-    DRM_BYTE *pbKeyMessage = nullptr;
-    DRM_DWORD cbKeyMessage = 0;
 
     // The current state MUST be KEY_INIT otherwise error out.
-    ChkBOOL(m_eKeyState == KEY_INIT, DRM_E_INVALIDARG);
+    if(m_eKeyState == KEY_INIT){
 
-    ChkArg(f_piMediaKeySessionCallback != nullptr);
+        ChkArg(f_piMediaKeySessionCallback != nullptr);
 
-    m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
+        m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
 
-    // Try to figure out the size of the license acquisition
-    // challenge to be returned.
-    dr = Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
-                                          g_rgpdstrRights,
-                                          DRM_NO_OF(g_rgpdstrRights),
-                                          nullptr,
-                                          !m_customData.empty() ? m_customData.c_str() : nullptr,
-                                          m_customData.size(),
-                                          nullptr,
-                                          &cchSilentURL,
-                                          nullptr,
-                                          nullptr,
-                                          nullptr,
-                                          &cbChallenge,
-                                          nullptr);
-    if (dr == DRM_E_BUFFERTOOSMALL)
-    {
-        if (cchSilentURL > 0)
+        // Try to figure out the size of the license acquisition
+        // challenge to be returned.
+        dr = Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
+                                            g_rgpdstrRights,
+                                            DRM_NO_OF(g_rgpdstrRights),
+                                            nullptr,
+                                            !m_customData.empty() ? m_customData.c_str() : nullptr,
+                                            m_customData.size(),
+                                            nullptr,
+                                            &cchSilentURL,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            &cbChallenge,
+                                            nullptr);
+        if (dr == DRM_E_BUFFERTOOSMALL)
         {
-            ChkMem(pchSilentURL = (DRM_CHAR *)Oem_MemAlloc(cchSilentURL + 1));
-            ZEROMEM(pchSilentURL, cchSilentURL + 1);
+            if (cchSilentURL > 0)
+            {
+                ChkMem(pchSilentURL = (DRM_CHAR *)Oem_MemAlloc(cchSilentURL + 1));
+                ZEROMEM(pchSilentURL, cchSilentURL + 1);
+            }
+
+            // Allocate buffer that is sufficient to store the license acquisition
+            // challenge.
+            if (cbChallenge > 0)
+            {
+                ChkMem(pbChallenge = (DRM_BYTE *)Oem_MemAlloc(cbChallenge + 1));
+                ZEROMEM(pbChallenge, cbChallenge + 1);
+            }
+            dr = DRM_SUCCESS;
+        }
+        else
+        {
+            ChkDR(dr);
         }
 
-        // Allocate buffer that is sufficient to store the license acquisition
-        // challenge.
-        if (cbChallenge > 0)
-        {
-            ChkMem(pbChallenge = (DRM_BYTE *)Oem_MemAlloc(cbChallenge + 1));
-            ZEROMEM(pbChallenge, cbChallenge + 1);
-        }
-        dr = DRM_SUCCESS;
+        // Supply a buffer to receive the license acquisition challenge.
+        ChkDR(Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
+                                            g_rgpdstrRights,
+                                            DRM_NO_OF(g_rgpdstrRights),
+                                            nullptr,
+                                            !m_customData.empty() ? m_customData.c_str() : nullptr,
+                                            m_customData.size(),
+                                            pchSilentURL,
+                                            &cchSilentURL,
+                                            nullptr,
+                                            nullptr,
+                                            pbChallenge,
+                                            &cbChallenge,
+                                            nullptr));
+
+        pbChallenge[cbChallenge] = 0;
+        m_eKeyState = KEY_PENDING;
+
+       // Everything is OK and trigger a callback to let the caller
+        // handle the key message.
+        m_piCallback->OnKeyMessage((const uint8_t *) pbChallenge, cbChallenge, (char *) pchSilentURL);
     }
-    else
-    {
-        ChkDR(dr);
-    }
-
-    // Supply a buffer to receive the license acquisition challenge.
-    ChkDR(Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
-                                           g_rgpdstrRights,
-                                           DRM_NO_OF(g_rgpdstrRights),
-                                           nullptr,
-                                           !m_customData.empty() ? m_customData.c_str() : nullptr,
-                                           m_customData.size(),
-                                           pchSilentURL,
-                                           &cchSilentURL,
-                                           nullptr,
-                                           nullptr,
-                                           pbChallenge,
-                                           &cbChallenge,
-                                           nullptr));
-
-    pbChallenge[cbChallenge] = 0;
-    m_eKeyState = KEY_PENDING;
-
-    // Everything is OK and trigger a callback to let the caller
-    // handle the key message.
-    m_piCallback->OnKeyMessage((const uint8_t *) pbChallenge, cbChallenge, (char *) pchSilentURL);
 
 ErrorExit:
     if (DRM_FAILED(dr))
@@ -624,11 +616,11 @@ ErrorExit:
         if (m_piCallback != nullptr)
         {
             m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
-            m_eKeyState = KEY_ERROR;
         }
+        m_eKeyState = KEY_ERROR;
+        LOGGER(LERROR_, "Failure during license acquisition challenge. (error: 0x%08X)",(unsigned int)dr);
     }
 
-    SAFE_OEM_FREE(pbKeyMessage);
     SAFE_OEM_FREE(pbChallenge);
     SAFE_OEM_FREE(pchSilentURL);
 }
@@ -643,48 +635,61 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
 {
 
     DRM_RESULT dr = DRM_SUCCESS;
-    DRM_LICENSE_RESPONSE oLicenseResponse;
 
-    // The current state MUST be KEY_PENDING otherwise error out.
-    ChkBOOL(m_eKeyState == KEY_PENDING, DRM_E_INVALIDARG);
-    ChkArg(f_pbKeyMessageResponse != nullptr && f_cbKeyMessageResponse > 0);
+    if(m_eKeyState == KEY_PENDING){
+        DRM_LICENSE_RESPONSE oLicenseResponse;
 
-    BKNI_Memset(&oLicenseResponse, 0, sizeof(oLicenseResponse));
+        ChkArg(f_pbKeyMessageResponse != nullptr && f_cbKeyMessageResponse > 0);
 
-    ChkDR(Drm_LicenseAcq_ProcessResponse(m_poAppContext,
-                                         DRM_PROCESS_LIC_RESPONSE_NO_FLAGS,
-                                         const_cast<DRM_BYTE *>(f_pbKeyMessageResponse),
-                                         f_cbKeyMessageResponse,
-                                         &oLicenseResponse));
+        BKNI_Memset(&oLicenseResponse, 0, sizeof(oLicenseResponse));
 
-    while (Drm_Reader_Bind(m_poAppContext,
-                           g_rgpdstrRights,
-                           DRM_NO_OF(g_rgpdstrRights),
-                           PolicyCallback,
-                           nullptr,
-                           &m_oDecryptContext) == DRM_E_BUFFERTOOSMALL) {
-        uint8_t *pbNewOpaqueBuffer = nullptr;
-        m_cbOpaqueBuffer *= 2;
+        ChkDR(Drm_LicenseAcq_ProcessResponse(m_poAppContext,
+                                            DRM_PROCESS_LIC_RESPONSE_NO_FLAGS,
+                                            const_cast<DRM_BYTE *>(f_pbKeyMessageResponse),
+                                            f_cbKeyMessageResponse,
+                                            &oLicenseResponse));
+        
+        while ((dr = Drm_Reader_Bind(m_poAppContext,
+                            g_rgpdstrRights,
+                            DRM_NO_OF(g_rgpdstrRights),
+                            PolicyCallback,
+                            nullptr,
+                            &m_oDecryptContext)) == DRM_E_BUFFERTOOSMALL) {
+            uint8_t *pbNewOpaqueBuffer = nullptr;
+            m_cbOpaqueBuffer *= 2;
 
-        ChkMem( pbNewOpaqueBuffer = ( uint8_t* )Oem_MemAlloc(m_cbOpaqueBuffer) );
+            ChkMem( pbNewOpaqueBuffer = ( uint8_t* )Oem_MemAlloc(m_cbOpaqueBuffer) );
 
-        if( m_cbOpaqueBuffer > DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ) {
-            ChkDR( DRM_E_OUTOFMEMORY );
+            if( m_cbOpaqueBuffer > DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ) {
+                ChkDR( DRM_E_OUTOFMEMORY );
+            }
+            ChkDR( Drm_ResizeOpaqueBuffer(
+                    m_poAppContext,
+                    pbNewOpaqueBuffer,
+                    m_cbOpaqueBuffer ) );
+            /*
+            Free the old buffer and then transfer the new buffer ownership
+            Free must happen after Drm_ResizeOpaqueBuffer because that
+            function assumes the existing buffer is still valid
+            */
+            SAFE_OEM_FREE(m_pbOpaqueBuffer);
+            m_pbOpaqueBuffer = pbNewOpaqueBuffer;
         }
-        ChkDR( Drm_ResizeOpaqueBuffer(
-                m_poAppContext,
-                pbNewOpaqueBuffer,
-                m_cbOpaqueBuffer ) );
-        /*
-         Free the old buffer and then transfer the new buffer ownership
-         Free must happen after Drm_ResizeOpaqueBuffer because that
-         function assumes the existing buffer is still valid
-        */
-        SAFE_OEM_FREE(m_pbOpaqueBuffer);
-        m_pbOpaqueBuffer = pbNewOpaqueBuffer;
+        ChkDR(dr);
+
+        ChkDR( Drm_Reader_Commit( m_poAppContext, nullptr, nullptr ) );
+               
+        m_eKeyState = KEY_READY;
     }
 
-    if (DRM_FAILED( dr )) {
+    if((m_eKeyState == KEY_READY) && (DRM_SUCCEEDED(dr))){
+        m_piCallback->OnKeyStatusUpdate("KeyUsable", nullptr, 0);
+        LOGGER(LINFO_, "Send OnKeyStatusUpdate->KeyUsable");
+    }
+
+ErrorExit:
+    if (DRM_FAILED(dr))
+    {
         if (dr == DRM_E_LICENSE_NOT_FOUND) {
             /* could not find a license for the KID */
             printf("%s: no licenses found in the license store. Please request one from the license server.\n", __FUNCTION__);
@@ -702,23 +707,9 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
         else {
             printf("%s: unexpected failure during bind. 0x%x\n", __FUNCTION__,(unsigned int)dr);
         }
-    }
-
-    ChkDR( Drm_Reader_Commit( m_poAppContext, nullptr, nullptr ) );
-    printf("%s - calling Drm_Reader_Commit dr %x\n", __FUNCTION__, (unsigned int)dr);
-
-ErrorExit:
-    if (DRM_FAILED(dr))
-    {
-        m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
-        printf("Playready failed processing license response\n");
+        
         m_eKeyState = KEY_ERROR;
-    }
-    else
-    {
-        m_piCallback->OnKeyStatusUpdate("KeyUsable", nullptr, 0);
-        printf("Key processed, now ready for content decryption\n");
-        m_eKeyState = KEY_READY;
+        m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
     }
     return;
 }
@@ -752,8 +743,9 @@ CDMi_RESULT MediaKeySession::Close(void)
         m_eKeyState = KEY_CLOSED;
 
         m_fCommit = FALSE;
-
     }
+
+    return CDMi_SUCCESS;
 }
 
 CDMi_RESULT MediaKeySession::Decrypt(
@@ -772,35 +764,33 @@ CDMi_RESULT MediaKeySession::Decrypt(
         bool /* initWithLast15 */)
 {
     DRM_RESULT dr = DRM_SUCCESS;
+    CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
-    DRM_BYTE *pbData = nullptr;
-    DRM_DWORD cbData = 0;
-    NEXUS_Error rc = NEXUS_SUCCESS;
-
-    DRM_BYTE *desc = nullptr;
     Rpc_Secbuf_Info *pRPCsecureBufferInfo;
     B_Secbuf_Info   secureBufferInfo;
+    void *pOpaqueData = nullptr;
+    void *pOpaqueDataEnc = nullptr;
 
-    // The current state MUST be KEY_READY otherwise error out.
-    ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
-    ChkArg(f_pbIV != nullptr && f_cbIV == sizeof(DRM_UINT64));
-    ChkArg(payloadData != nullptr && payloadDataSize > 0);
+    {
+        // The current state MUST be KEY_READY otherwise error out.
+        ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
+        ChkArg(f_pbIV != nullptr && f_cbIV == sizeof(DRM_UINT64));
+        ChkArg(payloadData != nullptr && payloadDataSize > 0);
+    }
 
     // TODO: find the reason of different endianess
     oAESContext.qwInitializationVector = 0;
-    for (int i=0; i<f_cbIV; ++i) {
+    for (uint32_t i=0; i<f_cbIV; ++i) {
         oAESContext.qwInitializationVector <<= 8;
         oAESContext.qwInitializationVector += f_pbIV[i];
     }
-
-    void *pOpaqueData, *pOpaqueDataEnc;
 
     pRPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
     ::memcpy(pRPCsecureBufferInfo, payloadData, payloadDataSize);
 
     if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
         printf("B_Secbuf_AllocWithToken() failed!\n");
-        goto ErrorExit;
+       goto ErrorExit;
     } else {
         // Update token for WPE to get the secure buffer
         B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
@@ -817,8 +807,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
     // copy all samples data including clear one too
     B_Secbuf_ImportData(pOpaqueData, 0, (unsigned char*)pOpaqueDataEnc, pRPCsecureBufferInfo->size, 1);
 
-     _decoderLock.Lock();
-     if (Drm_Reader_DecryptOpaque(
+   _decoderLock.Lock();
+    ChkDR( Drm_Reader_DecryptOpaque(
             &m_oDecryptContext,
             pRPCsecureBufferInfo->subsamples_count,
             pRPCsecureBufferInfo->subsamples,
@@ -826,40 +816,33 @@ CDMi_RESULT MediaKeySession::Decrypt(
             payloadDataSize,
             (DRM_BYTE*)pOpaqueDataEnc,
             (DRM_DWORD*)&payloadDataSize,
-            (DRM_BYTE**)&pOpaqueData) == DRM_SUCCESS) {
+            (DRM_BYTE**)&pOpaqueData));
 
-            // Call commit during the decryption of the first sample.
-            if (!m_fCommit)
-            {
-                if (Drm_Reader_Commit(m_poAppContext, PolicyCallback, nullptr) == DRM_SUCCESS)
-                    m_fCommit = TRUE;
-            }
+    // Return clear content.
+    *f_pcbOpaqueClearContent = 0;
+    *f_ppbOpaqueClearContent = nullptr;
 
-            // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
-            B_Secbuf_FreeDesc(pOpaqueData);
-            // Encrypted data does not need anymore, freeing
-            B_Secbuf_Free(pOpaqueDataEnc);
-            ::free(pRPCsecureBufferInfo);
+    cr = CDMi_SUCCESS;
 
-            // Return clear content.
-            *f_pcbOpaqueClearContent = 0;
-            *f_ppbOpaqueClearContent = nullptr;
-
-            _decoderLock.Unlock();
-            return CDMi_SUCCESS;
+ErrorExit: 
+    if (DRM_FAILED(dr))
+    {
+        LOGGER(LERROR_, "Decryption failed (error: 0x%08X)", static_cast<uint32_t>(dr));
     }
-    else {
-        printf("Drm_Reader_DecryptOpaque is failed -----> \n");
-        ::free(pRPCsecureBufferInfo);
-        // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
+
+    ::free(pRPCsecureBufferInfo);
+
+    // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
+    if(pOpaqueData != nullptr){
         B_Secbuf_FreeDesc(pOpaqueData);
-        // Encrypted data does not need anymore, freeing
-        B_Secbuf_Free(pOpaqueDataEnc);
-        _decoderLock.Unlock();
-        return CDMi_S_FALSE;
     }
-ErrorExit:
-    return CDMi_S_FALSE;
+
+    // Encrypted data does not need anymore, freeing
+    if(pOpaqueDataEnc != nullptr){
+        B_Secbuf_Free(pOpaqueDataEnc);
+    }
+    _decoderLock.Unlock();
+    return cr;
 }
 
 CDMi_RESULT MediaKeySession::ReleaseClearContent(
