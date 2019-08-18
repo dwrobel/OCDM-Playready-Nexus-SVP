@@ -15,6 +15,7 @@ find_package(NexusPlayready REQUIRED)
 add_library(${DRM_PLUGIN_NAME} SHARED 
     MediaSession.cpp
     MediaSystem.cpp
+    MediaSessionExt.cpp
 )
 
 set_target_properties(${DRM_PLUGIN_NAME} PROPERTIES 

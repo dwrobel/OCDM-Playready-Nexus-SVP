@@ -46,7 +46,7 @@ enum LogLevel {
 
 namespace CDMi {
 
-class MediaKeySession : public IMediaKeySession {
+class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
 private:
     enum KeyState {
         // Has been initialized.
@@ -110,6 +110,14 @@ public:
         uint32_t f_cbSessionKey,
         const uint32_t  f_cbClearContentOpaque,
         uint8_t  *f_pbClearContentOpaque ) override;
+
+    virtual uint32_t GetSessionIdExt(void) const override;
+    virtual CDMi_RESULT SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength) override;
+    virtual CDMi_RESULT GetChallengeDataExt(uint8_t* challenge, uint32_t& challengeSize, uint32_t isLDL) override;
+    virtual CDMi_RESULT CancelChallengeDataExt() override;
+    virtual CDMi_RESULT StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t* secureStopId) override;
+    virtual CDMi_RESULT InitDecryptContextByKid() override;
+    virtual CDMi_RESULT CleanDecryptContext() override;
 
 private:
     bool LoadRevocationList(const char *revListFile);
