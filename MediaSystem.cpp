@@ -43,7 +43,7 @@ public:
         joinSettings.ignoreStandbyRequest = true;
         rc = NxClient_Join(&joinSettings);
         if (rc) {
-            printf("Couldnt join nxserver\n");
+            LOGGER(LERROR_, "Couldnt join nxserver [rc=0x%08X]", rc);
             goto ErrorExit;
         }
 
@@ -51,7 +51,7 @@ public:
         rc = NxClient_Alloc(&nxAllocSettings, &m_nxAllocResults);
         
         if (rc) {
-            printf("NxClient_Alloc failed\n");
+            LOGGER(LERROR_, "NxClient_Alloc failed nxserver [rc=0x%08X]", rc);
             goto ErrorExit;
         }
 
@@ -88,6 +88,7 @@ public:
             {
                 SAFE_OEM_FREE(oemSettings.binFileName);
             }
+            LOGGER(LINFO_, "Found PR_BIN_FILE_NAME binFileName=%s", oemSettingsEnvironment);
         }
 
         /* copy the defaultRWDirName if provided */
@@ -100,6 +101,7 @@ public:
             {
                 SAFE_OEM_FREE(oemSettings.keyHistoryFileName);
             }
+            LOGGER(LINFO_, "Found PR_KEY_HISTORY_FILE_NAME keyHistoryFileName=%s", oemSettingsEnvironment);       
         }
 
         /* copy the defaultRWDirName if provided */
@@ -112,6 +114,7 @@ public:
             {
                 SAFE_OEM_FREE(oemSettings.defaultRWDirName);
             }
+            LOGGER(LINFO_, "Found PR_DEFAULT_RW_DIR_NAME defaultRWDirName=%s", oemSettingsEnvironment);
         }
 
         ChkDR(Drm_Platform_Initialize((void *)&oemSettings));
@@ -122,7 +125,7 @@ public:
 ErrorExit:
         if (DRM_FAILED(dr))
         {
-            printf("Playready Initialize failed\n");
+            LOGGER(LERROR_, "Playready Initialize failed (error: 0x%08X)", static_cast<unsigned int>(dr));
         }
     }
 
@@ -157,7 +160,7 @@ ErrorExit:
 
     CDMi_RESULT DestroyMediaKeySession(IMediaKeySession *f_piMediaKeySession) {
 
-      delete f_piMediaKeySession;
+        delete f_piMediaKeySession;
 
         return CDMi_SUCCESS;
     }
