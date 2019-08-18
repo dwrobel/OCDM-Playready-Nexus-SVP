@@ -17,6 +17,8 @@
 #include "cdmi.h"
 #include "MediaSession.h"
 
+#include <drmconstants.h>
+
 namespace CDMi {
 
 class PlayReady : public IMediaKeys {
@@ -70,6 +72,48 @@ public:
         BKNI_Memset(&oemSettings, 0, sizeof(OEM_Settings));
         oemSettings.heap = heapSettings.heap;
 
+        oemSettings.binFileName = nullptr;
+        oemSettings.keyHistoryFileName = nullptr;
+        oemSettings.defaultRWDirName = nullptr;
+
+        char * oemSettingsEnvironment;
+
+        /* copy the defaultRWDirName if provided */
+        oemSettingsEnvironment = getenv( "PR_BIN_FILE_NAME" );
+        if( (oemSettingsEnvironment != NULL))
+        {
+            DRM_DWORD  cchStr = 0;
+            oemSettings.binFileName = (DRM_WCHAR *)Oem_MemAlloc(sizeof(DRM_WCHAR) * DRM_MAX_PATH);
+            if( !convertCStringToWString((char *)oemSettingsEnvironment, oemSettings.binFileName, &cchStr))
+            {
+                SAFE_OEM_FREE(oemSettings.binFileName);
+            }
+        }
+
+        /* copy the defaultRWDirName if provided */
+        oemSettingsEnvironment = getenv( "PR_KEY_HISTORY_FILE_NAME" );
+        if( (oemSettingsEnvironment != NULL))
+        {
+            DRM_DWORD  cchStr = 0;
+            oemSettings.keyHistoryFileName = (DRM_WCHAR *)Oem_MemAlloc(sizeof(DRM_WCHAR) * DRM_MAX_PATH);
+            if( !convertCStringToWString((char *)oemSettingsEnvironment, oemSettings.keyHistoryFileName, &cchStr))
+            {
+                SAFE_OEM_FREE(oemSettings.keyHistoryFileName);
+            }
+        }
+
+        /* copy the defaultRWDirName if provided */
+        oemSettingsEnvironment = getenv( "PR_DEFAULT_RW_DIR_NAME" );
+        if( (oemSettingsEnvironment != NULL))
+        {
+            DRM_DWORD  cchStr = 0;
+            oemSettings.defaultRWDirName = (DRM_WCHAR *)Oem_MemAlloc(sizeof(DRM_WCHAR) * DRM_MAX_PATH);
+            if( !convertCStringToWString((char *)oemSettingsEnvironment, oemSettings.defaultRWDirName, &cchStr))
+            {
+                SAFE_OEM_FREE(oemSettings.defaultRWDirName);
+            }
+        }
+
         ChkDR(Drm_Platform_Initialize((void *)&oemSettings));
 
         m_drmOemContext = oemSettings.f_pOEMContext;
@@ -112,13 +156,54 @@ ErrorExit:
     }
 
     CDMi_RESULT DestroyMediaKeySession(IMediaKeySession *f_piMediaKeySession) {
- 
-        delete f_piMediaKeySession;
+
+      delete f_piMediaKeySession;
 
         return CDMi_SUCCESS;
     }
 
 private:
+    bool convertCStringToWString( char * pCStr, DRM_WCHAR * pWStr, DRM_DWORD * cchStr)
+    {
+        DRM_RESULT         dr = DRM_SUCCESS;
+        bool               result = false;
+        DRM_SUBSTRING      tmpSubStr;
+        DRM_CHAR           tmpCStr[ DRM_MAX_PATH ];
+        DRM_WCHAR          tmpWChar[ DRM_MAX_PATH ];
+        DRM_STRING         tmpWStr;
+
+        if(( pCStr != NULL) && (pWStr != NULL))
+        {
+            /* Convert the given char * to DRM_CHAR * */
+            BKNI_Memset(tmpCStr, 0, (DRM_MAX_PATH * sizeof(DRM_CHAR)));
+            ChkDR( DRM_STR_StringCchCopyA(
+                    tmpCStr,
+                    sizeof(tmpCStr),
+                    pCStr) );
+
+            /* Make sure tmpWChar is NULL terminated */
+            BKNI_Memset(tmpWChar, 0, (DRM_MAX_PATH * sizeof(DRM_WCHAR)));
+
+            tmpSubStr.m_ich = 0;
+            tmpSubStr.m_cch = strlen( (char*)tmpCStr );
+
+            /* Convert the DRM_CHAR * to DRM_STRING. */
+            tmpWStr.pwszString = tmpWChar;
+            tmpWStr.cchString  = DRM_MAX_PATH;
+            DRM_UTL_PromoteASCIItoUNICODE( tmpCStr,
+                                        &tmpSubStr,
+                                        &tmpWStr);
+
+            BKNI_Memcpy(pWStr, tmpWStr.pwszString, (tmpWStr.cchString+1) * sizeof (DRM_WCHAR));
+            *cchStr = tmpWStr.cchString;
+            pWStr[tmpWStr.cchString] = g_wchNull;
+            result = true;
+        }
+
+    ErrorExit:
+        return result;
+    }
+
     DRM_VOID *m_drmOemContext;
     NxClient_AllocResults m_nxAllocResults;
 };
