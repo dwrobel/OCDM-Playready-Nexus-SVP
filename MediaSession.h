@@ -32,6 +32,18 @@
 #include <drmtypes.h>
 #include <drmerr.h>
 
+enum LogLevel {
+    LERROR_ = 31,
+    LWARNING_ = 33,
+    LINFO_ = 32
+};
+
+#define LOGGER(lvl, fmt , ... )    \
+        do{ \
+            fprintf(stdout, "\033[1;%dm[%s:%d](%s){object=%p} " fmt "\n\033[0m", lvl, __FILE__, __LINE__, __FUNCTION__, this, ##__VA_ARGS__);    \
+            fflush(stdout); \
+        }while( 0 )
+
 namespace CDMi {
 
 class MediaKeySession : public IMediaKeySession {
