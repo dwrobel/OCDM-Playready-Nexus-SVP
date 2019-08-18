@@ -158,8 +158,6 @@ private:
     DRM_BOOL m_fCommit;
     DRM_VOID *m_pOEMContext;
 
-    WPEFramework::Core::CriticalSection _decoderLock;
-
     std::vector<uint8_t> mDrmHeader;
     uint32_t m_SessionId;
     std::vector<uint8_t> mBatchId;

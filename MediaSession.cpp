@@ -40,7 +40,9 @@
 #include <drmmathsafe.h>
 #include <prdy_http.h>
 #include <drm_data.h>
-#include <core/core.h>
+
+using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
+extern WPEFramework::Core::CriticalSection drmAppContextMutex_;
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -365,7 +367,6 @@ DRM_RESULT MediaKeySession::PolicyCallback(
         , m_eKeyState(KEY_CLOSED)
         , m_fCommit(false)
         , m_pOEMContext(f_pOEMContext)
-        , _decoderLock() 
         , mDrmHeader()
         , m_SessionId()
         , mBatchId()
@@ -780,6 +781,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
         const uint8_t* /* keyId */,
         bool /* initWithLast15 */)
 {
+    SafeCriticalSection systemLock(drmAppContextMutex_); 
+
     DRM_RESULT dr = DRM_SUCCESS;
     CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
@@ -824,7 +827,6 @@ CDMi_RESULT MediaKeySession::Decrypt(
     // copy all samples data including clear one too
     B_Secbuf_ImportData(pOpaqueData, 0, (unsigned char*)pOpaqueDataEnc, pRPCsecureBufferInfo->size, 1);
 
-   _decoderLock.Lock();
     ChkDR( Drm_Reader_DecryptOpaque(
             m_oDecryptContext,
             pRPCsecureBufferInfo->subsamples_count,
@@ -860,7 +862,7 @@ ErrorExit:
     if(pOpaqueDataEnc != nullptr){
         B_Secbuf_Free(pOpaqueDataEnc);
     }
-    _decoderLock.Unlock();
+
     return cr;
 }
 

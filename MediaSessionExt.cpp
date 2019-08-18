@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <sstream>
 
+using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
+extern WPEFramework::Core::CriticalSection drmAppContextMutex_;
+
 // The rights we want to request.
 const DRM_WCHAR PLAY[] = { DRM_ONE_WCHAR('P', '\0'),
                            DRM_ONE_WCHAR('l', '\0'),
@@ -100,7 +103,7 @@ CDMi_RESULT MediaKeySession::SetDrmHeader(const uint8_t drmHeader[], uint32_t dr
 CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t * secureStopId)
 {
     // open scope for DRM_APP_CONTEXT mutex
-    // ScopedMutex systemLock(mDrmSystem->getDrmAppContextMutex());
+    SafeCriticalSection systemLock(drmAppContextMutex_);
 
     //const std::string licStr(licenseData.begin(), licenseData.end());
     //MYTRACE("\n%s", licStr.c_str());
@@ -221,7 +224,8 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
 CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
 {
     // open scope for DRM_APP_CONTEXT mutex
-    // SafeCriticalSection systemLock(drmAppContextMutex_);
+    SafeCriticalSection systemLock(drmAppContextMutex_);
+    
     DRM_RESULT err;
     // Seems like we no longer have to worry about invalid app context, make sure with this ASSERT.
     ASSERT(m_poAppContext != nullptr);
@@ -296,6 +300,8 @@ CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
 
 CDMi_RESULT MediaKeySession::GetChallengeDataExt(uint8_t * challenge, uint32_t & challengeSize, uint32_t /* isLDL */)
 {
+    SafeCriticalSection systemLock(drmAppContextMutex_);
+    
     // sanity check for drm header
     if (mDrmHeader.size() == 0) {
         LOGGER(LERROR_, "Error: No valid DRM header");
@@ -369,7 +375,9 @@ CDMi_RESULT MediaKeySession::CancelChallengeDataExt()
 }
 
 CDMi_RESULT MediaKeySession::CleanDecryptContext()
-{
+{   
+    SafeCriticalSection systemLock(drmAppContextMutex_);
+    
     if (m_oDecryptContext != nullptr){
         Drm_Reader_Close(m_oDecryptContext);
 

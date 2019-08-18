@@ -19,6 +19,8 @@
 
 #include <drmconstants.h>
 
+WPEFramework::Core::CriticalSection drmAppContextMutex_;
+
 namespace CDMi {
 
 class PlayReady : public IMediaKeys {
