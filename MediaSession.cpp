@@ -40,6 +40,7 @@
 #include <drmmathsafe.h>
 #include <prdy_http.h>
 #include <drm_data.h>
+#include <core/core.h>
 
 #define NYI_KEYSYSTEM "keysystem-placeholder"
 
@@ -364,6 +365,8 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
         , m_pOEMContext(f_pOEMContext)
         , _decoderLock() {
 
+    LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
+            
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
     DRM_DWORD cchEncodedSessionID = sizeof(m_rgchSessionID);
@@ -429,7 +432,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
         /* setup the Playready secure clock */
         if(InitSecureClock(m_poAppContext) != 0)
         {
-            printf("%d Failed to initiize Secure Clock, quitting....\n",__LINE__);
+            LOGGER(LERROR_, "Failed to initiize Secure Clock, quitting...");
             goto ErrorExit;
         }
     }
@@ -439,7 +442,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
         struct timeval  tv;
         struct tm      *tm;
 
-        printf("%d Secure Clock not supported, trying the Anti-Rollback Clock...\n",__LINE__);
+        LOGGER(LINFO_, "Secure Clock not supported, trying the Anti-Rollback Clock...");
 
         gettimeofday(&tv, nullptr);
         tm = gmtime(&tv.tv_sec);
@@ -455,15 +458,14 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
         if(Drm_AntiRollBackClock_Init(m_poAppContext, &systemTime) != 0)
         {
-            printf("%d Failed to initiize Anti-Rollback Clock, quitting....\n",__LINE__);
+            LOGGER(LERROR_, "Failed to initiize Anti-Rollback Clock, quitting....");
             goto ErrorExit;
         }
     }
     else
     {
         if (dr != 0) {
-             printf("%d Expect platform to support Secure Clock or Anti-Rollback Clock.  Possible certificate error.%u:%d\n",
-                   __LINE__, dr, dr);
+            LOGGER(LERROR_, "Expect platform to support Secure Clock or Anti-Rollback Clock. Possible certificate (error 0x%08X)", static_cast<unsigned int>(dr));
             goto ErrorExit;
         }
     }
@@ -491,7 +493,7 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
                           &cchEncodedSessionID,
                           0));
 
-    printf("Session ID generated: %s\n", m_rgchSessionID);
+    LOGGER(LINFO_, "Session ID generated: %s", m_rgchSessionID);
 
     ChkDR(Drm_Content_SetProperty(m_poAppContext,
                                   DRM_CSP_AUTODETECT_HEADER,
@@ -508,19 +510,19 @@ MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitD
 
     m_eKeyState = KEY_INIT;
 
+    LOGGER(LINFO_, "Session Initialized");
 ErrorExit:
     if (DRM_FAILED(dr))
     {
         m_eKeyState = KEY_ERROR;
-        printf("Drm_Content_SetProperty() failed, exiting");
+        LOGGER(LERROR_, "Drm_Content_SetProperty() failed, exiting");
     }
 }
 
 MediaKeySession::~MediaKeySession(void)
 {
-
     Close();
-    printf("Destructing PlayReady Session [%p]\n", this);
+    LOGGER(LINFO_, "PlayReady Session Destructed");
 }
 
 const char *MediaKeySession::GetSessionId(void) const
@@ -605,7 +607,9 @@ void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCal
         pbChallenge[cbChallenge] = 0;
         m_eKeyState = KEY_PENDING;
 
-       // Everything is OK and trigger a callback to let the caller
+        LOGGER(LINFO_, "Generated license acquisition challenge.");
+
+        // Everything is OK and trigger a callback to let the caller
         // handle the key message.
         m_piCallback->OnKeyMessage((const uint8_t *) pbChallenge, cbChallenge, (char *) pchSilentURL);
     }
@@ -643,12 +647,14 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
 
         BKNI_Memset(&oLicenseResponse, 0, sizeof(oLicenseResponse));
 
+        LOGGER(LINFO_, "Processing license acquisition response...");
         ChkDR(Drm_LicenseAcq_ProcessResponse(m_poAppContext,
                                             DRM_PROCESS_LIC_RESPONSE_NO_FLAGS,
                                             const_cast<DRM_BYTE *>(f_pbKeyMessageResponse),
                                             f_cbKeyMessageResponse,
                                             &oLicenseResponse));
         
+        LOGGER(LINFO_, "Binding License...");
         while ((dr = Drm_Reader_Bind(m_poAppContext,
                             g_rgpdstrRights,
                             DRM_NO_OF(g_rgpdstrRights),
@@ -680,6 +686,7 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
         ChkDR( Drm_Reader_Commit( m_poAppContext, nullptr, nullptr ) );
                
         m_eKeyState = KEY_READY;
+        LOGGER(LINFO_, "Key processed, now ready for content decryption");
     }
 
     if((m_eKeyState == KEY_READY) && (DRM_SUCCEEDED(dr))){
@@ -692,20 +699,20 @@ ErrorExit:
     {
         if (dr == DRM_E_LICENSE_NOT_FOUND) {
             /* could not find a license for the KID */
-            printf("%s: no licenses found in the license store. Please request one from the license server.\n", __FUNCTION__);
+            LOGGER(LERROR_, "No licenses found in the license store. Please request one from the license server.");
         }
         else if(dr == DRM_E_LICENSE_EXPIRED) {
             /* License is expired */
-            printf("%s: License expired. Please request one from the license server.\n", __FUNCTION__);
+            LOGGER(LERROR_, "License expired. Please request one from the license server.");
         }
         else if(  dr == DRM_E_RIV_TOO_SMALL ||
                   dr == DRM_E_LICEVAL_REQUIRED_REVOCATION_LIST_NOT_AVAILABLE )
         {
             /* Revocation Package must be update */
-            printf("%s: Revocation Package must be update. 0x%x\n", __FUNCTION__,(unsigned int)dr);
+            LOGGER(LERROR_, "Revocation Package must be update. (error: 0x%08X)",(unsigned int)dr);
         }
         else {
-            printf("%s: unexpected failure during bind. 0x%x\n", __FUNCTION__,(unsigned int)dr);
+            LOGGER(LERROR_, "Unexpected failure during bind. (error: 0x%08X)",(unsigned int)dr);
         }
         
         m_eKeyState = KEY_ERROR;
@@ -724,7 +731,7 @@ CDMi_RESULT MediaKeySession::Close(void)
 {
     // The current state MUST be KEY_PENDING otherwise do nothing.
     if (m_eKeyState != KEY_CLOSED)
-    {
+    {       
         if (m_eKeyState == KEY_READY)
         {
             Drm_Reader_Close(&m_oDecryptContext);
@@ -789,8 +796,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
     ::memcpy(pRPCsecureBufferInfo, payloadData, payloadDataSize);
 
     if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
-        printf("B_Secbuf_AllocWithToken() failed!\n");
-       goto ErrorExit;
+        LOGGER(LERROR_, "B_Secbuf_Alloc(%d, B_Secbuf_Type_eSecure, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueData);
+        goto ErrorExit;
     } else {
         // Update token for WPE to get the secure buffer
         B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
@@ -801,7 +808,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
         payloadDataSize = pRPCsecureBufferInfo->size;
     }
     if (B_Secbuf_AllocWithToken(pRPCsecureBufferInfo->size, B_Secbuf_Type_eGeneric, pRPCsecureBufferInfo->token_enc, &pOpaqueDataEnc)) {
-        printf("B_Secbuf_AllocWithToken() failed!\n");
+        LOGGER(LERROR_, "B_Secbuf_AllocWithToken(%d, B_Secbuf_Type_eGeneric, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueDataEnc);
         goto ErrorExit;
     }
     // copy all samples data including clear one too
@@ -885,7 +892,7 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
     rc = NEXUS_Memory_Allocate(MAX_URL_LENGTH, &allocSettings, (void **)(&pTimeChallengeURL ));
     if(rc != NEXUS_SUCCESS)
     {
-        printf("%s - %d NEXUS_Memory_Allocate failed for time challenge response buffer, rc = %d\n",__FUNCTION__, __LINE__, rc);
+        LOGGER(LERROR_, " NEXUS_Memory_Allocate failed for time challenge response buffer, rc = %d", rc);
         goto ErrorExit;
     }
 
@@ -896,7 +903,7 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
 
     if( petRC != 0)
     {
-        printf("%d Secure Time forward link petition request failed, rc = %d\n",__LINE__, petRC);
+        LOGGER(LERROR_, " Secure Time forward link petition request failed, rc = %d", petRC);
         rc = petRC;
         goto ErrorExit;
     }
@@ -923,14 +930,14 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
 
             if( petRC != 0)
             {
-                printf("%d Secure Time URL petition request failed, rc = %d\n",__LINE__, petRC);
+                LOGGER(LERROR_, " Secure Time URL petition request failed, rc = %d", petRC);
                 rc = petRC;
                 goto ErrorExit;
             }
         }
         else
         {
-            printf("%d Secure Clock Petition responded with unsupported result, rc = %d, can't get the time challenge URL\n",__LINE__, petRespCode);
+            LOGGER(LERROR_, "Secure Clock Petition responded with unsupported result, rc = %d, can't get the time challenge URL", petRespCode);
             rc = -1;
             goto ErrorExit;
         }
@@ -940,7 +947,7 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
     rc = NEXUS_Memory_Allocate(MAX_TIME_CHALLENGE_RESPONSE_LENGTH, &allocSettings, (void **)(&pbResponse ));
     if(rc != NEXUS_SUCCESS)
     {
-        printf("%d NEXUS_Memory_Allocate failed for time challenge response buffer, rc = %d\n",__LINE__, rc);
+        LOGGER(LERROR_, "NEXUS_Memory_Allocate failed for time challenge response buffer, rc = %d", rc);
         goto ErrorExit;
     }
 
@@ -954,7 +961,7 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
                                                         &length);
     if( post_ret != 0)
     {
-        printf("%d Secure Time Challenge request failed, rc = %d\n",__LINE__, post_ret);
+        LOGGER(LERROR_, "Secure Time Challenge request failed, rc = %d", post_ret);
         rc = post_ret;
         goto ErrorExit;
     }
@@ -965,12 +972,12 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
             (uint8_t *) pbResponse);
     if ( drResponse != DRM_SUCCESS )
     {
-        printf("%s - %d Drm_SecureTime_ProcessResponse failed, drResponse = %x\n",__FUNCTION__, __LINE__, (unsigned int)drResponse);
+        LOGGER(LERROR_, "Drm_SecureTime_ProcessResponse failed, drResponse = %x", (unsigned int)drResponse);
         dr = drResponse;
         ChkDR( drResponse);
 
     }
-    printf("%d Initialized Playready Secure Clock success.\n",__LINE__);
+    LOGGER(LINFO_, "Initialized Playready Secure Clock success.");
 
     /* NOW testing the system time */
 
