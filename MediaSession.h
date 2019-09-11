@@ -39,6 +39,13 @@ enum LogLevel {
     LINFO_ = 32
 };
 
+// The following two values determine the initial size of the in-memory license
+// store. If more licenses are used concurrently, Playready will resize the
+// to make room. However, the resizing action is inefficient in both CPU and
+// memory, so it is useful to get the max size right and set it here.
+const DRM_DWORD LICENSE_SIZE_BYTES = 512;  // max possible license size (ask the server team)
+const DRM_DWORD MAX_NUM_LICENSES = 200;    // max number of licenses (ask the RefApp team)
+
 #define LOGGER(lvl, fmt , ... )    \
         do{ \
             fprintf(stdout, "\033[1;%dm[%s:%d](%s){object=%p} " fmt "\n\033[0m", lvl, __FILE__, __LINE__, __FUNCTION__, this, ##__VA_ARGS__);    \
@@ -52,6 +59,16 @@ struct PlayLevels {
     uint16_t analogVideoLevel_;              //!< Analog video output protection level.
     uint16_t compressedDigitalAudioLevel_;   //!< Compressed digital audio output protection level.
     uint16_t uncompressedDigitalAudioLevel_; //!< Uncompressed digital audio output protection level.
+};
+
+class LicenseResponse {
+public:
+    LicenseResponse() : dlr(new DRM_LICENSE_RESPONSE) {}
+    ~LicenseResponse() { delete dlr; }
+    DRM_LICENSE_RESPONSE * get() { return dlr; }
+    void clear() { memset(dlr, 0, sizeof(DRM_LICENSE_RESPONSE)); }
+private:
+    DRM_LICENSE_RESPONSE * const dlr;
 };
 
 class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
@@ -77,7 +94,12 @@ private:
 public:
     //static const std::vector<std::string> m_mimeTypes;
 
-    MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext);
+    MediaKeySession(
+        const uint8_t *f_pbInitData, uint32_t f_cbInitData, 
+        const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, 
+        DRM_VOID *f_pOEMContext, DRM_APP_CONTEXT * poAppContext,  
+        bool initiateChallengeGeneration = false);
+   
     ~MediaKeySession();
     bool playreadyGenerateKeyRequest();
     bool ready() const { return m_eKeyState == KEY_READY; }
@@ -120,14 +142,13 @@ public:
         uint8_t  *f_pbClearContentOpaque ) override;
 
     virtual uint32_t GetSessionIdExt(void) const override;
-    virtual CDMi_RESULT SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength) override;
     virtual CDMi_RESULT GetChallengeDataExt(uint8_t* challenge, uint32_t& challengeSize, uint32_t isLDL) override;
-    virtual CDMi_RESULT CancelChallengeDataExt() override;
     virtual CDMi_RESULT StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t* secureStopId) override;
-    virtual CDMi_RESULT InitDecryptContextByKid() override;
-    virtual CDMi_RESULT CleanDecryptContext() override;
+    virtual CDMi_RESULT SelectKeyId(const uint8_t keyLength, const uint8_t keyId[]) override;
 
+    void UninitializeContext();
 private:
+
     bool LoadRevocationList(const char *revListFile);
 
     static DRM_RESULT PolicyCallback(
@@ -140,11 +161,22 @@ private:
     int InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx);
 
     std::vector<unsigned char> drmIdToVectorId(const DRM_ID *drmId);
-    string vectorToHexString(const std::vector<uint8_t>& vec);
-
+    void PrintBase64(const int32_t length, const uint8_t* data, const char id[]);
+    inline void ToggleKeyIdFormat(const uint8_t keyLength, uint8_t keyId[])
+    {
+        ASSERT(keyLength > 8);
+        // Converting the KID format between the standard and PlayReady formats
+        // consists of switching endian on bytes 0-3, 4-5, and 6-7.
+        std::swap(keyId[0], keyId[3]);
+        std::swap(keyId[1], keyId[2]);
+        std::swap(keyId[4], keyId[5]);
+        std::swap(keyId[6], keyId[7]);
+    }
+    CDMi_RESULT SetKeyId(DRM_APP_CONTEXT *pDrmAppCtx, const uint8_t keyLength, const uint8_t keyId[]);
+    CDMi_RESULT SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx, const uint32_t headerLength, const uint8_t header[]);
 private:
     DRM_APP_CONTEXT *m_poAppContext;
-    DRM_DECRYPT_CONTEXT *m_oDecryptContext; 
+    DRM_DECRYPT_CONTEXT *   m_oDecryptContext; 
     DRM_BYTE *m_pbOpaqueBuffer;
     DRM_DWORD m_cbOpaqueBuffer;
 
@@ -163,7 +195,13 @@ private:
     std::vector<uint8_t> mBatchId;
     std::vector<std::vector<uint8_t>>  mLicenseIds;
     std::vector<std::vector<uint8_t>>  mKeyIds;
+
+    std::unique_ptr<LicenseResponse> mLicenseResponse;
+    std::vector<uint8_t> mSecureStopId;
+    PlayLevels levels_;
+
     bool m_decryptInited;
+    bool mInitiateChallengeGeneration;
 };
 
 } // namespace CDMi

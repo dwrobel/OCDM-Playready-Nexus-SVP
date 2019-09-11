@@ -356,8 +356,12 @@ DRM_RESULT MediaKeySession::PolicyCallback(
 
 }
 
- MediaKeySession::MediaKeySession(const uint8_t *f_pbInitData, uint32_t f_cbInitData, const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, DRM_VOID *f_pOEMContext)
-        : m_poAppContext(nullptr)
+ MediaKeySession::MediaKeySession(
+     const uint8_t *f_pbInitData, uint32_t f_cbInitData, 
+     const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, 
+     DRM_VOID *f_pOEMContext, DRM_APP_CONTEXT * appContext,
+     bool initiateChallengeGeneration)
+        : m_poAppContext(appContext)
         , m_oDecryptContext(nullptr)
         , m_pbOpaqueBuffer(nullptr)
         , m_cbOpaqueBuffer(0)
@@ -372,10 +376,12 @@ DRM_RESULT MediaKeySession::PolicyCallback(
         , mBatchId()
         , mLicenseIds()
         , mKeyIds()
-        , m_decryptInited(false){
+        , m_decryptInited(false)
+        , mInitiateChallengeGeneration(initiateChallengeGeneration){
 
     LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
     m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
+    memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
             
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
@@ -391,134 +397,151 @@ DRM_RESULT MediaKeySession::PolicyCallback(
 
     DRM_DWORD dwEncryptionMode  = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
 
+    mLicenseResponse = std::unique_ptr<LicenseResponse>(new LicenseResponse());
+    mSecureStopId.clear();
+
     // The current state MUST be KEY_CLOSED otherwise error out.
     ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
 
     ChkArg((f_pbInitData == nullptr) == (f_cbInitData == 0));
 
-    if (f_pbInitData != nullptr)
+    if (initiateChallengeGeneration != false)
     {
-
-        std::string initData(reinterpret_cast<const char *>(f_pbInitData), f_cbInitData);
-
-        if (!parsePlayreadyInitializationData(initData, &playreadyInitData)) {
-            playreadyInitData = initData;
-        }
-    }
-
-    ChkMem(m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE));
-    m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
-
-    ChkMem(m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(sizeof(DRM_APP_CONTEXT)));
-
-    dstrHDSPath.pwszString = rgwchHDSPath;
-    dstrHDSPath.cchString = DRM_MAX_PATH;
-
-    /* Convert the HDS path to DRM_STRING. */
-    if (bdrm_get_hds_dir_lgth() > 0){
-        BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString, hdsDir, bdrm_get_hds_dir_lgth() * sizeof(DRM_WCHAR));
-    }
-    BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(), hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
-
-    if (hdsFname != NULL && bdrm_get_pr3x_hds_fname_lgth() > 0) {
-        if (bdrm_get_hds_dir_lgth() > 0)
+        if (f_pbInitData != nullptr)
         {
+            std::string initData(reinterpret_cast<const char *>(f_pbInitData), f_cbInitData);
+
+            if (!parsePlayreadyInitializationData(initData, &playreadyInitData)) {
+                playreadyInitData = initData;
+            }
+        }
+
+        ChkMem(m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE));
+        m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
+
+        ChkMem(m_poAppContext = (DRM_APP_CONTEXT *)Oem_MemAlloc(sizeof(DRM_APP_CONTEXT)));
+
+        dstrHDSPath.pwszString = rgwchHDSPath;
+        dstrHDSPath.cchString = DRM_MAX_PATH;
+
+        /* Convert the HDS path to DRM_STRING. */
+        if (bdrm_get_hds_dir_lgth() > 0){
             BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString, hdsDir, bdrm_get_hds_dir_lgth() * sizeof(DRM_WCHAR));
-            BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(),
-                        hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
         }
-    }
+        BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(), hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
 
-    // Initialize DRM app context.
-    ChkDR(Drm_Initialize(m_poAppContext,
-                         m_pOEMContext,
-                         m_pbOpaqueBuffer,
-                         m_cbOpaqueBuffer,
-                         &dstrHDSPath));
+        if (hdsFname != NULL && bdrm_get_pr3x_hds_fname_lgth() > 0) {
+            if (bdrm_get_hds_dir_lgth() > 0)
+            {
+                BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString, hdsDir, bdrm_get_hds_dir_lgth() * sizeof(DRM_WCHAR));
+                BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(),
+                            hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
+            }
+        }
 
-    dr = Drm_SecureTime_GetValue( m_poAppContext, &ftSystemTime, &eClockType  );
-    if( (dr == DRM_E_SECURETIME_CLOCK_NOT_SET) || (dr == DRM_E_TEE_PROVISIONING_REQUIRED) )
-    {
-        /* setup the Playready secure clock */
-        if(InitSecureClock(m_poAppContext) != 0)
+        // Initialize DRM app context.
+        ChkDR(Drm_Initialize(m_poAppContext,
+                            m_pOEMContext,
+                            m_pbOpaqueBuffer,
+                            m_cbOpaqueBuffer,
+                            &dstrHDSPath));
+
+        dr = Drm_SecureTime_GetValue( m_poAppContext, &ftSystemTime, &eClockType  );
+        if( (dr == DRM_E_SECURETIME_CLOCK_NOT_SET) || (dr == DRM_E_TEE_PROVISIONING_REQUIRED) )
         {
-            LOGGER(LERROR_, "Failed to initiize Secure Clock, quitting...");
-            goto ErrorExit;
+            /* setup the Playready secure clock */
+            if(InitSecureClock(m_poAppContext) != 0)
+            {
+                LOGGER(LERROR_, "Failed to initiize Secure Clock, quitting...");
+                goto ErrorExit;
+            }
         }
-    }
-    else if (dr == DRM_E_CLK_NOT_SUPPORTED)  /* Secure Clock not supported, try the Anti-Rollback Clock */
-    {
-        DRMSYSTEMTIME   systemTime;
-        struct timeval  tv;
-        struct tm      *tm;
-
-        LOGGER(LINFO_, "Secure Clock not supported, trying the Anti-Rollback Clock...");
-
-        gettimeofday(&tv, nullptr);
-        tm = gmtime(&tv.tv_sec);
-
-        systemTime.wYear         = tm->tm_year+1900;
-        systemTime.wMonth        = tm->tm_mon+1;
-        systemTime.wDayOfWeek    = tm->tm_wday;
-        systemTime.wDay          = tm->tm_mday;
-        systemTime.wHour         = tm->tm_hour;
-        systemTime.wMinute       = tm->tm_min;
-        systemTime.wSecond       = tm->tm_sec;
-        systemTime.wMilliseconds = tv.tv_usec/1000;
-
-        if(Drm_AntiRollBackClock_Init(m_poAppContext, &systemTime) != 0)
+        else if (dr == DRM_E_CLK_NOT_SUPPORTED)  /* Secure Clock not supported, try the Anti-Rollback Clock */
         {
-            LOGGER(LERROR_, "Failed to initiize Anti-Rollback Clock, quitting....");
-            goto ErrorExit;
-        }
-    }
-    else
-    {
-        if (dr != 0) {
-            LOGGER(LERROR_, "Expect platform to support Secure Clock or Anti-Rollback Clock. Possible certificate (error 0x%08X)", static_cast<unsigned int>(dr));
-            goto ErrorExit;
-        }
-    }
+            DRMSYSTEMTIME   systemTime;
+            struct timeval  tv;
+            struct tm      *tm;
 
-    if (DRM_REVOCATION_IsRevocationSupported())
-    {
-        ChkMem(m_pbRevocationBuffer = (DRM_BYTE *)Oem_MemAlloc(REVOCATION_BUFFER_SIZE));
+            LOGGER(LINFO_, "Secure Clock not supported, trying the Anti-Rollback Clock...");
 
-        ChkDR(Drm_Revocation_SetBuffer(m_poAppContext,
-                                       m_pbRevocationBuffer,
-                                       REVOCATION_BUFFER_SIZE));
-        if( !LoadRevocationList(DRM_DEFAULT_REVOCATION_LIST_FILE))
+            gettimeofday(&tv, nullptr);
+            tm = gmtime(&tv.tv_sec);
+
+            systemTime.wYear         = tm->tm_year+1900;
+            systemTime.wMonth        = tm->tm_mon+1;
+            systemTime.wDayOfWeek    = tm->tm_wday;
+            systemTime.wDay          = tm->tm_mday;
+            systemTime.wHour         = tm->tm_hour;
+            systemTime.wMinute       = tm->tm_min;
+            systemTime.wSecond       = tm->tm_sec;
+            systemTime.wMilliseconds = tv.tv_usec/1000;
+
+            if(Drm_AntiRollBackClock_Init(m_poAppContext, &systemTime) != 0)
+            {
+                LOGGER(LERROR_, "Failed to initiize Anti-Rollback Clock, quitting....");
+                goto ErrorExit;
+            }
+        }
+        else
         {
-            goto ErrorExit;
+            if (dr != 0) {
+                LOGGER(LERROR_, "Expect platform to support Secure Clock or Anti-Rollback Clock. Possible certificate (error 0x%08X)", static_cast<unsigned int>(dr));
+                goto ErrorExit;
+            }
         }
+
+        // Specify the initial size of the in-memory license store. The store will
+        // grow above this size if required during usage, using a memory-doubling
+        // algorithm. So it is more efficient, but not required, to get the size
+        // correct from the beginning.
+        dr = Drm_ResizeInMemoryLicenseStore(m_poAppContext, MAX_NUM_LICENSES * LICENSE_SIZE_BYTES);
+        if (DRM_FAILED(dr)) {
+            LOGGER(LERROR_,  "Error in Drm_ResizeInMemoryLicenseStore 0x%08lX", dr);
+        }
+
+        if (DRM_REVOCATION_IsRevocationSupported())
+        {
+            ChkMem(m_pbRevocationBuffer = (DRM_BYTE *)Oem_MemAlloc(REVOCATION_BUFFER_SIZE));
+
+            ChkDR(Drm_Revocation_SetBuffer(m_poAppContext,
+                                        m_pbRevocationBuffer,
+                                        REVOCATION_BUFFER_SIZE));
+            if( !LoadRevocationList(DRM_DEFAULT_REVOCATION_LIST_FILE))
+            {
+                goto ErrorExit;
+            }
+        }
+
+        // Generate a random media session ID.
+        ChkDR(Oem_Random_GetBytes(m_poAppContext, (DRM_BYTE *)&oSessionID, sizeof(oSessionID)));
+        ZEROMEM(m_rgchSessionID, sizeof(m_rgchSessionID));
+        // Store the generated media session ID in base64 encoded form.
+        ChkDR(DRM_B64_EncodeA((DRM_BYTE *)&oSessionID,
+                            sizeof(oSessionID),
+                            m_rgchSessionID,
+                            &cchEncodedSessionID,
+                            0));
+
+        LOGGER(LINFO_, "Session ID generated: %s", m_rgchSessionID);
+
+        ChkDR(Drm_Content_SetProperty(m_poAppContext,
+                                    DRM_CSP_AUTODETECT_HEADER,
+                                    reinterpret_cast<const uint8_t *>(playreadyInitData.data()),
+                                    playreadyInitData.size()));
+
+        /* set encryption/decryption mode */
+        dwEncryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
+        ChkDR(Drm_Content_SetProperty(
+                m_poAppContext,
+                DRM_CSP_DECRYPTION_OUTPUT_MODE,
+                (const DRM_BYTE*)&dwEncryptionMode,
+                sizeof( DRM_DWORD ) ) );
+    } else {
+        // TODO: can we do this nicer?
+        mDrmHeader.resize(f_cbInitData);
+        memcpy(&mDrmHeader[0], f_pbInitData, f_cbInitData);
+        m_eKeyState = KEY_INIT;
     }
-
-    // Generate a random media session ID.
-    ChkDR(Oem_Random_GetBytes(m_poAppContext, (DRM_BYTE *)&oSessionID, sizeof(oSessionID)));
-    ZEROMEM(m_rgchSessionID, sizeof(m_rgchSessionID));
-    // Store the generated media session ID in base64 encoded form.
-    ChkDR(DRM_B64_EncodeA((DRM_BYTE *)&oSessionID,
-                          sizeof(oSessionID),
-                          m_rgchSessionID,
-                          &cchEncodedSessionID,
-                          0));
-
-    LOGGER(LINFO_, "Session ID generated: %s", m_rgchSessionID);
-
-    ChkDR(Drm_Content_SetProperty(m_poAppContext,
-                                  DRM_CSP_AUTODETECT_HEADER,
-                                  reinterpret_cast<const uint8_t *>(playreadyInitData.data()),
-                                  playreadyInitData.size()));
-
-    /* set encryption/decryption mode */
-    dwEncryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
-    ChkDR(Drm_Content_SetProperty(
-            m_poAppContext,
-            DRM_CSP_DECRYPTION_OUTPUT_MODE,
-            (const DRM_BYTE*)&dwEncryptionMode,
-            sizeof( DRM_DWORD ) ) );
-
-    m_eKeyState = KEY_INIT;
 
     LOGGER(LINFO_, "Session Initialized");
 ErrorExit:
@@ -530,10 +553,38 @@ ErrorExit:
 }
 
 MediaKeySession::~MediaKeySession(void)
-{
-    Close();
+{     
+    m_eKeyState = KEY_CLOSED;  
+    
+    if (m_oDecryptContext) {
+        LOGGER(LINFO_, "PlayReady Session Destructed");
+        Drm_Reader_Close(m_oDecryptContext);
+        delete m_oDecryptContext;
+        m_oDecryptContext = nullptr;
+    }
+
+    SAFE_OEM_FREE(m_pbOpaqueBuffer);
+    m_cbOpaqueBuffer = 0;
+    
+    SAFE_OEM_FREE(m_pbRevocationBuffer);
+    
+    m_piCallback = nullptr;
+    m_fCommit = FALSE;
+    m_decryptInited = false;
+
     LOGGER(LINFO_, "PlayReady Session Destructed");
 }
+
+
+void MediaKeySession::UninitializeContext() {
+    if (m_poAppContext) {
+        LOGGER(LINFO_, "PlayReady Session Uninitialize");
+        Drm_Uninitialize(m_poAppContext);
+    }
+    
+    SAFE_OEM_FREE(m_poAppContext);
+}
+
 
 const char *MediaKeySession::GetSessionId(void) const
 {
@@ -629,7 +680,7 @@ ErrorExit:
     {
         if (m_piCallback != nullptr)
         {
-            m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
+            m_piCallback->OnError(0, CDMi_S_FALSE, "KeyError");
         }
         m_eKeyState = KEY_ERROR;
         LOGGER(LERROR_, "Failure during license acquisition challenge. (error: 0x%08X)",(unsigned int)dr);
@@ -648,7 +699,7 @@ CDMi_RESULT MediaKeySession::Load(void)
 void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_cbKeyMessageResponse)
 {
 
-    DRM_RESULT dr = DRM_SUCCESS;
+    DRM_RESULT dr = DRM_SUCCESS;    
 
     if(m_eKeyState == KEY_PENDING){
         DRM_LICENSE_RESPONSE oLicenseResponse;
@@ -726,46 +777,20 @@ ErrorExit:
         }
         
         m_eKeyState = KEY_ERROR;
-        m_piCallback->OnKeyError(0, CDMi_S_FALSE, "KeyError");
+        m_piCallback->OnError(0, CDMi_S_FALSE, "KeyError");
     }
     return;
 }
 
 CDMi_RESULT MediaKeySession::Remove(void)
 {
-
     return CDMi_S_FALSE;
 }
 
 CDMi_RESULT MediaKeySession::Close(void)
 {
-    // The current state MUST be KEY_PENDING otherwise do nothing.
-    if (m_eKeyState != KEY_CLOSED)
-    {       
-        if (m_oDecryptContext) {
-            Drm_Reader_Close(m_oDecryptContext);
-            delete m_oDecryptContext;
-            m_oDecryptContext = nullptr;
-        }
-
-        Drm_Uninitialize(m_poAppContext);
-
-        SAFE_OEM_FREE(m_pbOpaqueBuffer);
-        m_cbOpaqueBuffer = 0;
-
-        SAFE_OEM_FREE(m_poAppContext);
-        SAFE_OEM_FREE(m_pbRevocationBuffer);
-
-        m_piCallback = nullptr;
-
-        m_eKeyState = KEY_CLOSED;
-
-        m_fCommit = FALSE;
-    }
-
-    return CDMi_SUCCESS;
+    return CDMi_S_FALSE;
 }
-
 CDMi_RESULT MediaKeySession::Decrypt(
         const uint8_t *f_pbSessionKey,
         uint32_t f_cbSessionKey,
@@ -779,9 +804,14 @@ CDMi_RESULT MediaKeySession::Decrypt(
         uint8_t **f_ppbOpaqueClearContent,
         const uint8_t /* keyIdLength */,
         const uint8_t* /* keyId */,
-        bool /* initWithLast15 */)
+        bool initWithLast15)
 {
     SafeCriticalSection systemLock(drmAppContextMutex_); 
+    
+    if (!m_oDecryptContext) {
+        LOGGER(LERROR_, "Error: no decrypt context (yet?)\n");
+        return CDMi_S_FALSE;
+    }
 
     DRM_RESULT dr = DRM_SUCCESS;
     CDMi_RESULT cr = CDMi_S_FALSE;
@@ -792,17 +822,39 @@ CDMi_RESULT MediaKeySession::Decrypt(
     void *pOpaqueDataEnc = nullptr;
 
     {
-        // The current state MUST be KEY_READY otherwise error out.
-        ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
-        ChkArg(f_pbIV != nullptr && f_cbIV == sizeof(DRM_UINT64));
         ChkArg(payloadData != nullptr && payloadDataSize > 0);
     }
 
-    // TODO: find the reason of different endianess
-    oAESContext.qwInitializationVector = 0;
-    for (uint32_t i=0; i<f_cbIV; ++i) {
-        oAESContext.qwInitializationVector <<= 8;
-        oAESContext.qwInitializationVector += f_pbIV[i];
+    if (!initWithLast15) {
+        if( f_pcbOpaqueClearContent == nullptr || f_ppbOpaqueClearContent == nullptr )
+        {
+            dr = DRM_E_INVALIDARG;
+            goto ErrorExit;
+        }
+
+        {
+            // The current state MUST be KEY_READY otherwise error out.
+            ChkBOOL(m_eKeyState == KEY_READY, DRM_E_INVALIDARG);
+            ChkArg(f_pbIV != nullptr && f_cbIV == sizeof(DRM_UINT64));
+        }
+    }
+
+    // TODO: can be done in another way (now abusing "initWithLast15" variable)
+    if (initWithLast15) {
+        // Netflix case
+       memcpy(&oAESContext, f_pbIV, sizeof(oAESContext));
+    } else {
+       // Regular case
+       // FIXME: IV bytes need to be swapped ???
+       // TODO: is this for-loop the same as "NETWORKBYTES_TO_QWORD"?
+       unsigned char * ivDataNonConst = const_cast<unsigned char *>(f_pbIV); // TODO: this is ugly
+       for (uint32_t i = 0; i < f_cbIV / 2; i++) {
+          unsigned char temp = ivDataNonConst[i];
+          ivDataNonConst[i] = ivDataNonConst[f_cbIV - i - 1];
+          ivDataNonConst[f_cbIV - i - 1] = temp;
+       }
+
+       memcpy(&oAESContext.qwInitializationVector, f_pbIV, f_cbIV);
     }
 
     pRPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
@@ -840,7 +892,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
     // Return clear content.
     *f_pcbOpaqueClearContent = 0;
     *f_ppbOpaqueClearContent = nullptr;
-
+    
     cr = CDMi_SUCCESS;
 
 ErrorExit: 

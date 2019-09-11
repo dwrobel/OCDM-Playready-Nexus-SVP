@@ -21,6 +21,7 @@ const DRM_CONST_STRING PLAY_RIGHT = DRM_CREATE_DRM_STRING(PLAY);
 const DRM_CONST_STRING* RIGHTS[] = { &PLAY_RIGHT };
 
 namespace CDMi {
+const DRM_CONST_STRING  *g_rgpdstrRightsExt[1] = {&g_dstrWMDRM_RIGHT_PLAYBACK};
 
 struct CallbackInfo
 {
@@ -89,15 +90,8 @@ static DRM_RESULT opencdm_output_levels_callback(
 }
 
 uint32_t MediaKeySession::GetSessionIdExt() const
-{    
-    return m_SessionId;
-}
-
-CDMi_RESULT MediaKeySession::SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength)
 {
-    mDrmHeader.resize(drmHeaderLength);
-    memcpy(&mDrmHeader[0], drmHeader, drmHeaderLength);
-    return CDMi_SUCCESS;
+    return m_SessionId;
 }
 
 CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t * secureStopId)
@@ -106,7 +100,7 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     SafeCriticalSection systemLock(drmAppContextMutex_);
 
     //const std::string licStr(licenseData.begin(), licenseData.end());
-    //MYTRACE("\n%s", licStr.c_str());
+    //LOGGER(LINFO_, "\n%s", licStr.c_str());
 
     // === Store the license and check for license processing errors.
     //
@@ -193,7 +187,7 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
 
     // BID
     mBatchId = drmIdToVectorId(&drmLicenseResponse.m_oBatchID);
-    LOGGER(LINFO_, "BID: %s", vectorToHexString(mBatchId).c_str());
+    PrintBase64(sizeof(DRM_ID), reinterpret_cast<const uint8_t *>(&mBatchId[0]), "BatchId");
     // Microsoft says that a batch ID of all zeros indicates some sort of error
     // for in-memory licenses. Hopefully this error was already caught above.
     const std::vector<uint8_t> zeros(DRM_ID_SIZE, 0);
@@ -204,24 +198,26 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     }
     // We take the batch ID as the secure stop ID
     secureStopId = &mBatchId[0];
-    LOGGER(LINFO_, "SSID: %s", vectorToHexString(mBatchId).c_str());
+    PrintBase64(sizeof(DRM_ID), secureStopId, "SecureStopId");
 
     // KID and LID
     mLicenseIds.clear();
     mKeyIds.clear();
-    LOGGER(LINFO_, "Found %d license%s in server response:", nLicenses, (nLicenses > 1) ? "s" : "");
+    LOGGER(LINFO_, "Found %d license%s in server response for :", nLicenses, (nLicenses > 1) ? "s" : "");
     for (uint32_t i=0; i < nLicenses; ++i)
     {
         const DRM_LICENSE_ACK * const licAck = &drmLicenseResponse.m_rgoAcks[i];
         mLicenseIds.push_back(drmIdToVectorId(&licAck->m_oLID));
         mKeyIds.push_back    (drmIdToVectorId(&licAck->m_oKID));
-        LOGGER(LINFO_, "KID[%d]:  %s", i, vectorToHexString(mKeyIds[i]).c_str());
+        LOGGER(LINFO_, "KID/LID[%d]:", i);
+        PrintBase64(sizeof(DRM_LID), reinterpret_cast<const uint8_t *>(&licAck->m_oLID), "LID");
+        PrintBase64(sizeof(DRM_KID), reinterpret_cast<const uint8_t *>(&licAck->m_oKID), "KID");
     }
 
     return CDMi_SUCCESS;
 }
 
-CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
+CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t keyId[])
 {
     // open scope for DRM_APP_CONTEXT mutex
     SafeCriticalSection systemLock(drmAppContextMutex_);
@@ -230,22 +226,19 @@ CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
     // Seems like we no longer have to worry about invalid app context, make sure with this ASSERT.
     ASSERT(m_poAppContext != nullptr);
 
-    // reinitialze DRM_APP_CONTEXT and set DRM header for current session for
-    // simulataneous decryption support
-    err = Drm_Reinitialize(m_poAppContext);
-    if (DRM_FAILED(err))
-    {
-        LOGGER(LERROR_, "Error: Drm_Reinitialize (error: 0x%08X)", static_cast<unsigned int>(err));
+    if (SelectDrmHeader(m_poAppContext, mDrmHeader.size(), &mDrmHeader[0]) != CDMi_SUCCESS){
         return CDMi_S_FALSE;
     }
 
-    err = Drm_Content_SetProperty(
-            m_poAppContext,
-            DRM_CSP_AUTODETECT_HEADER,
-            &mDrmHeader[0],
-            mDrmHeader.size());
-    if (DRM_FAILED(err)) {
-        LOGGER(LERROR_, "Error: Drm_Content_SetProperty");
+    // Select the license in the current DRM header by keyId
+    ASSERT(keyLength == DRM_ID_SIZE);
+
+    uint8_t keyParam[keyLength];
+    memcpy(keyParam, keyId, keyLength);
+    // switch from CENC to PlayReady format
+    ToggleKeyIdFormat(keyLength, keyParam); 
+
+    if (SetKeyId(m_poAppContext, keyLength, keyParam) != CDMi_SUCCESS){
         return CDMi_S_FALSE;
     }
 
@@ -255,21 +248,11 @@ CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
 
     CDMi_RESULT result = CDMi_SUCCESS;
 
-    if(m_oDecryptContext){
-        Drm_Reader_Close(m_oDecryptContext);
-        delete m_oDecryptContext;
-        m_oDecryptContext = nullptr;
-    }
-
-    m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
-    //Create a decrypt context and bind it with the drm context.
-    memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
-
     LOGGER(LINFO_, "Drm_Reader_Bind");
     err = Drm_Reader_Bind(
             m_poAppContext,
-            RIGHTS,
-            sizeof(RIGHTS) / sizeof(DRM_CONST_STRING*),
+            g_rgpdstrRightsExt,
+            DRM_NO_OF(g_rgpdstrRightsExt),
             &opencdm_output_levels_callback, 
             static_cast<const void*>(m_piCallback),
             m_oDecryptContext);
@@ -289,10 +272,12 @@ CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
         LOGGER(LERROR_, "Error: Drm_Reader_Commit (error: 0x%08X)", static_cast<unsigned int>(err));
         return CDMi_S_FALSE;
     }
-
+    
     if (result == CDMi_SUCCESS) {
         m_fCommit = TRUE;
         m_decryptInited = true;
+        m_eKeyState = KEY_READY;
+        LOGGER(LINFO_, "Key processed, now ready for content decryption");
     }
 
     return result;
@@ -301,7 +286,7 @@ CDMi_RESULT MediaKeySession::InitDecryptContextByKid()
 CDMi_RESULT MediaKeySession::GetChallengeDataExt(uint8_t * challenge, uint32_t & challengeSize, uint32_t /* isLDL */)
 {
     SafeCriticalSection systemLock(drmAppContextMutex_);
-    
+
     // sanity check for drm header
     if (mDrmHeader.size() == 0) {
         LOGGER(LERROR_, "Error: No valid DRM header");
@@ -313,78 +298,86 @@ CDMi_RESULT MediaKeySession::GetChallengeDataExt(uint8_t * challenge, uint32_t &
     // Seems like we no longer have to worry about invalid app context, make sure with this ASSERT.
     ASSERT(m_poAppContext != nullptr);
 
-    // reinitialize DRM_APP_CONTEXT - this is limitation of PlayReady 2.x maybe also needed here.
-    err = Drm_Reinitialize(m_poAppContext);
-    if (DRM_FAILED(err))
-    {
-        LOGGER(LERROR_, "Error: Drm_Reinitialize (error: 0x%08X)", static_cast<unsigned int>(err));
-        return CDMi_S_FALSE;
-    }
-
     // Set this session's DMR header in the PR3 app context.
-    err = Drm_Content_SetProperty(
-            m_poAppContext,
-            DRM_CSP_AUTODETECT_HEADER,
-            &mDrmHeader[0],
-            mDrmHeader.size());
-    if (DRM_FAILED(err)) {
-        LOGGER(LERROR_, "Error: Drm_Content_SetProperty");
+     if (SelectDrmHeader(m_poAppContext, mDrmHeader.size(), &mDrmHeader[0]) != CDMi_SUCCESS){
         return CDMi_S_FALSE;
     }
-
-    // Find the size of the challenge.
-    LOGGER(LINFO_, "Drm_LicenseAcq_GenerateChallenge, querying challenge size");
 
     // PlayReady doesn't like valid pointer + size 0
     DRM_BYTE* passedChallenge = static_cast<DRM_BYTE*>(challenge);
     if (challengeSize == 0) {
         passedChallenge = nullptr;
     }
-   
-    err = Drm_LicenseAcq_GenerateChallenge(
-            m_poAppContext,
-            RIGHTS,
-            sizeof(RIGHTS) / sizeof(DRM_CONST_STRING*),
-            nullptr,
-            nullptr, 0,
-            nullptr, nullptr,
-            nullptr, nullptr,
-            passedChallenge, &challengeSize,
-            nullptr);
 
-    LOGGER(LINFO_, "ChallengeSize: %u\n", challengeSize);
+    // Find the size of the challenge.
+    err = Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
+                                            g_rgpdstrRightsExt,
+                                            DRM_NO_OF(g_rgpdstrRightsExt),
+                                            nullptr,
+                                            nullptr,
+                                            0,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            nullptr,
+                                            passedChallenge, 
+                                            &challengeSize,
+                                            nullptr);
 
-    if ((err != DRM_E_BUFFERTOOSMALL) && (DRM_FAILED(err)))
-    {
-        LOGGER(LERROR_, "Error: Drm_LicenseAcq_GenerateChallenge_Netflix (error: 0x%08X)", static_cast<unsigned int>(err));
+    if ((err != DRM_E_BUFFERTOOSMALL) && (DRM_FAILED(err))){
+        LOGGER(LERROR_, "Error: Drm_LicenseAcq_GenerateChallenge (error: 0x%08X)", static_cast<unsigned int>(err));
         return CDMi_S_FALSE;
     }
 
-    if (err == DRM_E_BUFFERTOOSMALL) {
-        LOGGER(LERROR_, "Error: Drm_LicenseAcq_GenerateChallenge_Netflix (error: 0x%08X)", static_cast<unsigned int>(err));
+    if ((passedChallenge != nullptr) && (err == DRM_E_BUFFERTOOSMALL)){
+        LOGGER(LERROR_, "Error: Drm_LicenseAcq_GenerateChallenge (error: 0x%08X)", static_cast<unsigned int>(err));
         return CDMi_OUT_OF_MEMORY ;
     }
 
     return CDMi_SUCCESS;
 }
 
-CDMi_RESULT MediaKeySession::CancelChallengeDataExt()
-{
-    // NA
+CDMi_RESULT MediaKeySession::SetKeyId(DRM_APP_CONTEXT *pDrmAppCtx, const uint8_t keyLength, const uint8_t keyId[]){
+    // To use the DRM_CSP_SELECT_KID feature of Drm_Content_SetProperty(), the
+    // KID must be base64-encoded for some reason.
+    DRM_WCHAR rgwchEncodedKid[CCH_BASE64_EQUIV(DRM_ID_SIZE)]= {0};
+    DRM_DWORD cchEncodedKid = CCH_BASE64_EQUIV(DRM_ID_SIZE);
+    
+    DRM_RESULT err = DRM_B64_EncodeW(&keyId[0], sizeof(DRM_KID), rgwchEncodedKid, &cchEncodedKid, 0);
+    if (DRM_FAILED(err)) {
+        LOGGER(LERROR_, "Error: Error base64-encoding KID (error: 0x%08X)", static_cast<unsigned int>(err));
+        return CDMi_S_FALSE;
+    }
+
+    PrintBase64(DRM_ID_SIZE, keyId, "keyId");
+
+    LOGGER(LINFO_, "Drm_Content_SetProperty DRM_CSP_SELECT_KID");
+    err = Drm_Content_SetProperty(
+            pDrmAppCtx,
+            DRM_CSP_SELECT_KID,
+            (DRM_BYTE*)rgwchEncodedKid,
+            sizeof(rgwchEncodedKid));
+    if (DRM_FAILED(err)) {
+        LOGGER(LERROR_, "Error in Drm_Content_SetProperty DRM_CSP_SELECT_KID (error: 0x%08X)", static_cast<unsigned int>(err));
+        return CDMi_S_FALSE;
+    }
+    
     return CDMi_SUCCESS;
 }
 
-CDMi_RESULT MediaKeySession::CleanDecryptContext()
-{   
-    SafeCriticalSection systemLock(drmAppContextMutex_);
-    
-    if (m_oDecryptContext != nullptr){
-        Drm_Reader_Close(m_oDecryptContext);
-
-        delete m_oDecryptContext;
-        m_oDecryptContext = nullptr;
-        m_fCommit = FALSE;
-        m_decryptInited = false;
+CDMi_RESULT MediaKeySession::SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx, 
+    const uint32_t headerLength, const uint8_t header[])
+{
+    // Make the current app context contain the DRM header for this session.
+    LOGGER(LINFO_, "Drm_Content_SetProperty DRM_CSP_AUTODETECT_HEADER");
+    DRM_RESULT err = Drm_Content_SetProperty(
+            pDrmAppCtx,
+            DRM_CSP_AUTODETECT_HEADER,
+            header,
+            headerLength);
+    if (DRM_FAILED(err)) {
+        LOGGER(LERROR_, "Error: Drm_Content_SetProperty DRM_CSP_AUTODETECT_HEADER (error: 0x%08X)", static_cast<unsigned int>(err));
+        return CDMi_S_FALSE;
     }
 
     return CDMi_SUCCESS;
@@ -401,15 +394,24 @@ std::vector<unsigned char> MediaKeySession::drmIdToVectorId(const DRM_ID *drmId)
     return std::vector<unsigned char>(drmId->rgb, drmId->rgb + DRM_ID_SIZE);
 }
 
-std::string MediaKeySession::vectorToHexString(const std::vector<uint8_t>& vec)
-{
-    static TCHAR HexArray[] = "0123456789ABCDEF";
-    string result;
-
-    for ( auto &i : vec ) {
-        result += HexArray[i];
+void MediaKeySession::PrintBase64(const int32_t length, const uint8_t* data, const char id[]){
+    DRM_WCHAR rgwchEncodedKid[CCH_BASE64_EQUIV(length)]= {0};
+    DRM_DWORD cchEncodedKid = CCH_BASE64_EQUIV(length);
+    
+    DRM_RESULT err = DRM_B64_EncodeW(&data[0], length, rgwchEncodedKid, &cchEncodedKid, 0);
+    if (DRM_FAILED(err)) {
+        LOGGER(LERROR_, "Error: Error base64-encoding KID (error: 0x%08X)", static_cast<unsigned int>(err));
+        return;
     }
 
-    return (result);
+    printf("\033[1;33m%s: \'", id);
+    for(uint32_t i = 0; i < cchEncodedKid; i++){
+        printf("%c", (char)rgwchEncodedKid[i]);
+    }
+    printf("\' [");
+    for(int32_t i = 0; i < length; i++){
+        printf("%02x", data[i]);
+    }
+    printf("]\n\033[0m");
 }
 }
