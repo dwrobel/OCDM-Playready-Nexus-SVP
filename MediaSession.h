@@ -195,7 +195,7 @@ private:
 
     std::vector<uint8_t> mDrmHeader;
     uint32_t m_SessionId;
-    std::vector<uint8_t> mBatchId;
+    DRM_ID mBatchId;
     std::vector<std::vector<uint8_t>>  mLicenseIds;
     std::vector<std::vector<uint8_t>>  mKeyIds;
 

@@ -183,18 +183,18 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     // response. There is always only a single BID per server response.
 
     // BID
-    mBatchId = drmIdToVectorId(&drmLicenseResponse.m_oBatchID);
-    PrintBase64(sizeof(DRM_ID), reinterpret_cast<const uint8_t *>(&mBatchId[0]), "BatchId");
+    mBatchId = drmLicenseResponse.m_oBatchID; 
+    PrintBase64(sizeof(mBatchId.rgb), mBatchId.rgb, "BatchId/SecureStopId");
+
     // Microsoft says that a batch ID of all zeros indicates some sort of error
     // for in-memory licenses. Hopefully this error was already caught above.
-    const std::vector<uint8_t> zeros(DRM_ID_SIZE, 0);
-
-    if (std::equal(mBatchId.begin(), mBatchId.end(), zeros.begin())) {
+    const uint8_t zeros[sizeof(mBatchId.rgb)] = { 0 };
+    if(memcmp(mBatchId.rgb, zeros, sizeof(mBatchId.rgb)) == 0){
         LOGGER(LERROR_, "No batch ID in processed response");
         return CDMi_S_FALSE;
     }
     // We take the batch ID as the secure stop ID
-    memcpy(secureStopId, drmLicenseResponse.m_oBatchID.rgb, DRM_ID_SIZE);
+    memcpy(secureStopId, mBatchId.rgb, sizeof(mBatchId.rgb));
 
     // KID and LID
     mLicenseIds.clear();
@@ -206,8 +206,8 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
         mLicenseIds.push_back(drmIdToVectorId(&licAck->m_oLID));
         mKeyIds.push_back    (drmIdToVectorId(&licAck->m_oKID));
         LOGGER(LINFO_, "KID/LID[%d]:", i);
-        PrintBase64(sizeof(DRM_LID), reinterpret_cast<const uint8_t *>(&licAck->m_oLID), "LID");
-        PrintBase64(sizeof(DRM_KID), reinterpret_cast<const uint8_t *>(&licAck->m_oKID), "KID");
+        PrintBase64(sizeof(licAck->m_oLID.rgb), licAck->m_oLID.rgb, "LID");
+        PrintBase64(sizeof(licAck->m_oKID.rgb), licAck->m_oKID.rgb, "KID");
     }
 
     return CDMi_SUCCESS;
