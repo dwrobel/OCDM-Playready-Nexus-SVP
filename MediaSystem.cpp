@@ -348,14 +348,6 @@ public:
 
         CDMi_RESULT cr = CDMi_SUCCESS;
 
-        uint8_t ids[50 * DRM_ID_SIZE];
-        uint32_t c_ids(0);
-
-        if (GetSecureStopIds(ids, sizeof(ids), c_ids) != CDMi_SUCCESS)
-        {
-            LOGGER(LINFO_, "%zu secure stop%s pending commit", c_ids, (c_ids > 1) ? "s" : "");
-        }
-
         // Get the secure stop challenge
         DRM_ID ssSessionDrmId;
         ASSERT(sizeof(ssSessionDrmId.rgb) >= sessionIDLength);

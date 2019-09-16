@@ -197,14 +197,10 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
     memcpy(secureStopId, mBatchId.rgb, sizeof(mBatchId.rgb));
 
     // KID and LID
-    mLicenseIds.clear();
-    mKeyIds.clear();
     LOGGER(LINFO_, "Found %d license%s in server response for :", nLicenses, (nLicenses > 1) ? "s" : "");
     for (uint32_t i=0; i < nLicenses; ++i)
     {
         const DRM_LICENSE_ACK * const licAck = &drmLicenseResponse.m_rgoAcks[i];
-        mLicenseIds.push_back(drmIdToVectorId(&licAck->m_oLID));
-        mKeyIds.push_back    (drmIdToVectorId(&licAck->m_oKID));
         LOGGER(LINFO_, "KID/LID[%d]:", i);
         PrintBase64(sizeof(licAck->m_oLID.rgb), licAck->m_oLID.rgb, "LID");
         PrintBase64(sizeof(licAck->m_oKID.rgb), licAck->m_oKID.rgb, "KID");
@@ -387,37 +383,5 @@ CDMi_RESULT MediaKeySession::SelectDrmHeader(DRM_APP_CONTEXT *pDrmAppCtx,
     }
 
     return CDMi_SUCCESS;
-}
-
-// Converts a PR3 DRM_ID to a std::vector. Assumes everything is sized correctly.
-std::vector<unsigned char> MediaKeySession::drmIdToVectorId(const DRM_ID *drmId)
-{
-    assert(drmId);
-    assert(sizeof(drmId->rgb) == DRM_ID_SIZE);
-    if (!drmId){
-        return std::vector<unsigned char>();
-    }
-    return std::vector<unsigned char>(drmId->rgb, drmId->rgb + DRM_ID_SIZE);
-}
-
-void MediaKeySession::PrintBase64(const int32_t length, const uint8_t* data, const char id[]){
-    DRM_WCHAR rgwchEncodedKid[CCH_BASE64_EQUIV(length)]= {0};
-    DRM_DWORD cchEncodedKid = CCH_BASE64_EQUIV(length);
-    
-    DRM_RESULT err = DRM_B64_EncodeW(&data[0], length, rgwchEncodedKid, &cchEncodedKid, 0);
-    if (DRM_FAILED(err)) {
-        LOGGER(LERROR_, "Error: Error base64-encoding KID (error: 0x%08X)", static_cast<unsigned int>(err));
-        return;
-    }
-
-    printf("\033[1;33m%s: \'", id);
-    for(uint32_t i = 0; i < cchEncodedKid; i++){
-        printf("%c", (char)rgwchEncodedKid[i]);
-    }
-    printf("\' [");
-    for(int32_t i = 0; i < length; i++){
-        printf("%02x", data[i]);
-    }
-    printf("]\n\033[0m");
 }
 }

@@ -162,9 +162,13 @@ private:
             const DRM_VOID *f_pv);
 
     int InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx);
-
-    std::vector<unsigned char> drmIdToVectorId(const DRM_ID *drmId);
-    void PrintBase64(const int32_t length, const uint8_t* data, const char id[]);
+    inline void PrintBase64(const int32_t length, const uint8_t* data, const char id[])
+    {
+        std::string base64, hex;
+        WPEFramework::Core::ToString(data, length, true, base64);
+        WPEFramework::Core::ToHexString(data, length, hex);
+        LOGGER(LINFO_, "%s: %s\t[%s]", id, base64.c_str(), hex.c_str());
+    }
     inline void ToggleKeyIdFormat(const uint8_t keyLength, uint8_t keyId[])
     {
         ASSERT(keyLength > 8);
@@ -196,8 +200,6 @@ private:
     std::vector<uint8_t> mDrmHeader;
     uint32_t m_SessionId;
     DRM_ID mBatchId;
-    std::vector<std::vector<uint8_t>>  mLicenseIds;
-    std::vector<std::vector<uint8_t>>  mKeyIds;
 
     std::unique_ptr<LicenseResponse> mLicenseResponse;
     PlayLevels levels_;
