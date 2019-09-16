@@ -533,11 +533,12 @@ DRM_RESULT MediaKeySession::PolicyCallback(
                 DRM_CSP_DECRYPTION_OUTPUT_MODE,
                 (const DRM_BYTE*)&dwEncryptionMode,
                 sizeof( DRM_DWORD ) ) );
+        
+        m_eKeyState = KEY_INIT;
     } else {
         // TODO: can we do this nicer?
         mDrmHeader.resize(f_cbInitData);
         memcpy(&mDrmHeader[0], f_pbInitData, f_cbInitData);
-        m_eKeyState = KEY_INIT;
     }
 
     LOGGER(LINFO_, "Session Initialized");
