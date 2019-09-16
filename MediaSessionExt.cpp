@@ -94,6 +94,13 @@ uint32_t MediaKeySession::GetSessionIdExt() const
     return m_SessionId;
 }
 
+CDMi_RESULT MediaKeySession::SetDrmHeader(const uint8_t drmHeader[], uint32_t drmHeaderLength)
+{
+    mDrmHeader.resize(drmHeaderLength);
+    memcpy(&mDrmHeader[0], drmHeader, drmHeaderLength);
+    return CDMi_SUCCESS;
+}
+
 CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint32_t licenseDataSize, uint8_t * secureStopId)
 {
     // open scope for DRM_APP_CONTEXT mutex
@@ -281,6 +288,16 @@ CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t 
     }
 
     return result;
+}
+
+CDMi_RESULT MediaKeySession::CancelChallengeDataExt()
+{
+    return CDMi_SUCCESS;
+}
+
+CDMi_RESULT MediaKeySession::CleanDecryptContext()
+{
+    return CDMi_SUCCESS;
 }
 
 CDMi_RESULT MediaKeySession::GetChallengeDataExt(uint8_t * challenge, uint32_t & challengeSize, uint32_t /* isLDL */)
