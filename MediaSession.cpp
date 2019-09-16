@@ -374,15 +374,13 @@ DRM_RESULT MediaKeySession::PolicyCallback(
         , mDrmHeader()
         , m_SessionId()
         , mBatchId()
-        , mLicenseIds()
-        , mKeyIds()
         , m_decryptInited(false)
         , mInitiateChallengeGeneration(initiateChallengeGeneration){
 
     LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
     m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
     memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
-            
+        
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
     DRM_DWORD cchEncodedSessionID = sizeof(m_rgchSessionID);
@@ -562,6 +560,12 @@ MediaKeySession::~MediaKeySession(void)
         m_oDecryptContext = nullptr;
     }
 
+    DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &mBatchId);
+    // Since there are multiple licenses in a batch, we might have already cleared
+    // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
+    if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
+        LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
+    }
     SAFE_OEM_FREE(m_pbOpaqueBuffer);
     m_cbOpaqueBuffer = 0;
     
