@@ -200,7 +200,6 @@ private:
     std::vector<std::vector<uint8_t>>  mKeyIds;
 
     std::unique_ptr<LicenseResponse> mLicenseResponse;
-    std::vector<uint8_t> mSecureStopId;
     PlayLevels levels_;
 
     bool m_decryptInited;

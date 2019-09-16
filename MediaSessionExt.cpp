@@ -194,8 +194,7 @@ CDMi_RESULT MediaKeySession::StoreLicenseData(const uint8_t licenseData[], uint3
         return CDMi_S_FALSE;
     }
     // We take the batch ID as the secure stop ID
-    secureStopId = &mBatchId[0];
-    PrintBase64(sizeof(DRM_ID), secureStopId, "SecureStopId");
+    memcpy(secureStopId, drmLicenseResponse.m_oBatchID.rgb, DRM_ID_SIZE);
 
     // KID and LID
     mLicenseIds.clear();

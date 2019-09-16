@@ -398,7 +398,6 @@ DRM_RESULT MediaKeySession::PolicyCallback(
     DRM_DWORD dwEncryptionMode  = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
 
     mLicenseResponse = std::unique_ptr<LicenseResponse>(new LicenseResponse());
-    mSecureStopId.clear();
 
     // The current state MUST be KEY_CLOSED otherwise error out.
     ChkBOOL(m_eKeyState == KEY_CLOSED, DRM_E_INVALIDARG);
