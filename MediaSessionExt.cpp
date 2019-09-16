@@ -10,16 +10,6 @@
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 extern WPEFramework::Core::CriticalSection drmAppContextMutex_;
 
-// The rights we want to request.
-const DRM_WCHAR PLAY[] = { DRM_ONE_WCHAR('P', '\0'),
-                           DRM_ONE_WCHAR('l', '\0'),
-                           DRM_ONE_WCHAR('a', '\0'),
-                           DRM_ONE_WCHAR('y', '\0'),
-                           DRM_ONE_WCHAR('\0', '\0')
-};
-const DRM_CONST_STRING PLAY_RIGHT = DRM_CREATE_DRM_STRING(PLAY);
-const DRM_CONST_STRING* RIGHTS[] = { &PLAY_RIGHT };
-
 namespace CDMi {
 const DRM_CONST_STRING  *g_rgpdstrRightsExt[1] = {&g_dstrWMDRM_RIGHT_PLAYBACK};
 
