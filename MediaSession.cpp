@@ -820,7 +820,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
     DRM_RESULT dr = DRM_SUCCESS;
     CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
-    Rpc_Secbuf_Info *pRPCsecureBufferInfo = nullptr;
+    Rpc_Secbuf_Info *pRPCsecureBufferInfo = const_cast<Rpc_Secbuf_Info*>(reinterpret_cast<const Rpc_Secbuf_Info*>(payloadData));
     B_Secbuf_Info   secureBufferInfo;
     void *pOpaqueData = nullptr;
     void *pOpaqueDataEnc = nullptr;
@@ -861,25 +861,23 @@ CDMi_RESULT MediaKeySession::Decrypt(
        memcpy(&oAESContext.qwInitializationVector, f_pbIV, f_cbIV);
     }
 
-    pRPCsecureBufferInfo = static_cast<Rpc_Secbuf_Info*>(::malloc(payloadDataSize));
-    ::memcpy(pRPCsecureBufferInfo, payloadData, payloadDataSize);
 
-    if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
-        LOGGER(LERROR_, "B_Secbuf_Alloc(%d, B_Secbuf_Type_eSecure, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueData);
-        goto ErrorExit;
-    } else {
-        // Update token for WPE to get the secure buffer
-        B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
-        pRPCsecureBufferInfo->token = secureBufferInfo.token;
-        ::memcpy((void*)payloadData, pRPCsecureBufferInfo, payloadDataSize);
-
-        // Update payloadDataSize to the buffer size
-        payloadDataSize = pRPCsecureBufferInfo->size;
-    }
     if (B_Secbuf_AllocWithToken(pRPCsecureBufferInfo->size, B_Secbuf_Type_eGeneric, pRPCsecureBufferInfo->token_enc, &pOpaqueDataEnc)) {
         LOGGER(LERROR_, "B_Secbuf_AllocWithToken(%d, B_Secbuf_Type_eGeneric, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueDataEnc);
         goto ErrorExit;
     }
+
+    // copy data in the generic buffer to the secure buffer
+    if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
+        LOGGER(LERROR_, "B_Secbuf_Alloc(%d, B_Secbuf_Type_eSecure, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueData);
+    }
+     else {
+        // Update token for WPE to get the secure buffer
+        B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
+        pRPCsecureBufferInfo->token = secureBufferInfo.token;
+
+        // Update payloadDataSize to the buffer size
+        payloadDataSize = pRPCsecureBufferInfo->size;
     // copy all samples data including clear one too
     B_Secbuf_ImportData(pOpaqueData, 0, (unsigned char*)pOpaqueDataEnc, pRPCsecureBufferInfo->size, 1);
 
@@ -893,24 +891,23 @@ CDMi_RESULT MediaKeySession::Decrypt(
             (DRM_DWORD*)&payloadDataSize,
             (DRM_BYTE**)&pOpaqueData));
 
+        cr = CDMi_SUCCESS;
+    }
     // Return clear content.
     *f_pcbOpaqueClearContent = 0;
     *f_ppbOpaqueClearContent = nullptr;
     
-    cr = CDMi_SUCCESS;
 
 ErrorExit: 
     if (DRM_FAILED(dr))
     {
+        if (pOpaqueData != nullptr) B_Secbuf_Free(pOpaqueData);
+
         LOGGER(LERROR_, "Decryption failed (error: 0x%08X)", static_cast<uint32_t>(dr));
     }
 
-    if(pRPCsecureBufferInfo != nullptr){
-        ::free(pRPCsecureBufferInfo);
-    }
-
     // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
-    if(pOpaqueData != nullptr){
+    else if(pOpaqueData != nullptr){
         B_Secbuf_FreeDesc(pOpaqueData);
     }
 
