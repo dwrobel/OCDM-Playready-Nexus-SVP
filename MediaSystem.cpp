@@ -43,6 +43,16 @@ WPEFramework::Core::CriticalSection drmAppContextMutex_;
 // via the getLdlSessionLimit() API.
 const uint32_t NONCE_STORE_SIZE = 100;
 
+// Creates a new DRM_WCHAR[] on the heap from the provided string.
+// Note: Caller takes ownership of returned heap memory.
+static DRM_WCHAR* createDrmWchar(std::string const& s) {
+    DRM_WCHAR* w = new DRM_WCHAR[s.length() + 1];
+    for (size_t i = 0; i < s.length(); ++i)
+        w[i] = DRM_ONE_WCHAR(s[i], '\0');
+    w[s.length()] = DRM_ONE_WCHAR('\0', '\0');
+    return w;
+}
+
 bool calcFileSha256 (const std::string& filePath, uint8_t hash[], uint32_t hashLength )
 {
     FILE* const file = fopen(filePath.c_str(), "rb");
@@ -128,7 +138,7 @@ public:
         OEM_Settings oemSettings;
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_SUCCESS;
-/*
+
         string persistentPath = shell->PersistentPath() + string("/playready");
         string statePath = persistentPath + "/state"; // To store rollback clock state etc
         m_readDir = persistentPath + "/playready";
@@ -138,11 +148,14 @@ public:
         LOGGER(LINFO_,  "m_storeLocation: %s", m_storeLocation.c_str());
 
         WPEFramework::Core::Directory stateDir(statePath.c_str());
+        stateDir.CreatePath();
 
-        stateDir.Create();
+        std::string storeDir = persistentPath + "/playready/storage";
+        WPEFramework::Core::Directory storeDirectory(storeDir.c_str());
+        storeDirectory.CreatePath();
 
         WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), statePath);
-*/
+
         /* Drm_Platform_Initialize */
         NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
         NEXUS_Platform_GetClientConfiguration(&platformConfig);
@@ -620,10 +633,7 @@ public:
         CDMi_RESULT cr = CDMi_SUCCESS;
         DRM_RESULT dr = DRM_SUCCESS;
 
-        DRM_WCHAR rgwchHDSPath[ DRM_MAX_PATH ];
         DRM_CONST_STRING dstrHDSPath = DRM_EMPTY_DRM_STRING;
-        DRM_WCHAR *hdsDir = bdrm_get_hds_dir();
-        DRM_WCHAR *hdsFname = bdrm_get_pr3x_hds_fname();
         
         DRMFILETIME               ftSystemTime; /* Initialized by Drm_SecureTime_GetValue */
         DRM_SECURETIME_CLOCK_TYPE eClockType;   /* Initialized by Drm_SecureTime_GetValue */
@@ -636,29 +646,24 @@ public:
            m_poAppContext.reset();
         }
 
+        std::string rdir(m_readDir);
+
+        // Create wchar strings from the arguments.
+        drmdir_ = createDrmWchar(rdir);
+
+        // Initialize Ocdm directory.
+        g_dstrDrmPath.pwszString = drmdir_;
+        g_dstrDrmPath.cchString = rdir.length();
+
         m_poAppContext.reset(new DRM_APP_CONTEXT);
         memset(m_poAppContext.get(), 0, sizeof(DRM_APP_CONTEXT));
 
         m_pbOpaqueBuffer = (DRM_BYTE *)Oem_MemAlloc(MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE);
         m_cbOpaqueBuffer = MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE;
-
-        dstrHDSPath.pwszString = rgwchHDSPath;
-        dstrHDSPath.cchString = DRM_MAX_PATH;
-
-        /* Convert the HDS path to DRM_STRING. */
-        if (bdrm_get_hds_dir_lgth() > 0){
-            BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString, hdsDir, bdrm_get_hds_dir_lgth() * sizeof(DRM_WCHAR));
-        }
-        BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(), hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
-
-        if (hdsFname != NULL && bdrm_get_pr3x_hds_fname_lgth() > 0) {
-            if (bdrm_get_hds_dir_lgth() > 0)
-            {
-                BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString, hdsDir, bdrm_get_hds_dir_lgth() * sizeof(DRM_WCHAR));
-                BKNI_Memcpy((DRM_WCHAR*)dstrHDSPath.pwszString + bdrm_get_hds_dir_lgth(),
-                            hdsFname, (bdrm_get_pr3x_hds_fname_lgth() + 1) * sizeof(DRM_WCHAR));
-            }
-        }
+        
+        // Store store location
+        dstrHDSPath.pwszString =  createDrmWchar(m_storeLocation);
+        dstrHDSPath.cchString = m_storeLocation.length();
 
         dr  = Drm_Initialize(m_poAppContext.get(), 
                             m_drmOemContext,
@@ -808,6 +813,8 @@ public:
     }
 
 private:
+    DRM_WCHAR* drmdir_;
+
     DRM_VOID *m_drmOemContext;
     NxClient_AllocResults m_nxAllocResults;
 
@@ -820,8 +827,8 @@ private:
     DRM_BYTE *m_pbRevocationBuffer ;
     std::shared_ptr<DRM_APP_CONTEXT> m_poAppContext;
 
-    string m_readDir;
-    string m_storeLocation;
+    std::string m_readDir;
+    std::string m_storeLocation;
 };
 
 static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
