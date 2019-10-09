@@ -213,32 +213,39 @@ CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t 
 {
     // open scope for DRM_APP_CONTEXT mutex
     SafeCriticalSection systemLock(drmAppContextMutex_);
+    ASSERT(m_poAppContext != nullptr);
+    ASSERT(keyLength == DRM_ID_SIZE);
     
     DRM_RESULT err;
-    // Seems like we no longer have to worry about invalid app context, make sure with this ASSERT.
-    ASSERT(m_poAppContext != nullptr);
-
-    if (SelectDrmHeader(m_poAppContext, mDrmHeader.size(), &mDrmHeader[0]) != CDMi_SUCCESS){
-        return CDMi_S_FALSE;
-    }
-
-    // Select the license in the current DRM header by keyId
-    ASSERT(keyLength == DRM_ID_SIZE);
-
     uint8_t keyParam[keyLength];
+    CDMi_RESULT result = CDMi_SUCCESS;
+    // Seems like we no longer have to worry about invalid app context, make sure with this ASSERT.
     memcpy(keyParam, keyId, keyLength);
-    // switch from CENC to PlayReady format
-    ToggleKeyIdFormat(keyLength, keyParam); 
 
-    if (SetKeyId(m_poAppContext, keyLength, keyParam) != CDMi_SUCCESS){
+    ToggleKeyIdFormat(keyLength, keyParam);
+
+    std::vector<uint8_t> keyIdVec(keyParam, keyParam + keyLength);
+    // Select the license in the current DRM header by keyId
+
+    DecryptContextMap::iterator index = mDecryptContextMap.find(keyIdVec);
+    // switch from CENC to PlayReady format
+    if (index != mDecryptContextMap.end()) {
+
+        PrintBase64(sizeof(keyIdVec), &keyIdVec[0], 
+                        "Found existing decrypt context for keyId");
+        m_oDecryptContext = index->second;
+    }
+    else {
+        if (SelectDrmHeader(m_poAppContext, mDrmHeader.size(), &mDrmHeader[0]) != CDMi_SUCCESS){
         return CDMi_S_FALSE;
     }
 
-    if (m_decryptInited) {
-        return CDMi_SUCCESS;
+    if (SetKeyId(m_poAppContext, sizeof(keyParam), keyParam) != CDMi_SUCCESS){
+        return CDMi_S_FALSE;
     }
 
-    CDMi_RESULT result = CDMi_SUCCESS;
+    DRM_DECRYPT_CONTEXT* newDecryptContext = new DRM_DECRYPT_CONTEXT;
+    memset(newDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
 
     LOGGER(LINFO_, "Drm_Reader_Bind");
     err = Drm_Reader_Bind(
@@ -247,7 +254,7 @@ CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t 
             DRM_NO_OF(g_rgpdstrRightsExt),
             &opencdm_output_levels_callback, 
             static_cast<const void*>(m_piCallback),
-            m_oDecryptContext);
+            newDecryptContext);
     if (DRM_FAILED(err))
     {
         LOGGER(LERROR_, "Error: Drm_Reader_Bind (error: 0x%08X)", static_cast<unsigned int>(err));
@@ -263,11 +270,16 @@ CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t 
     {
         LOGGER(LERROR_, "Error: Drm_Reader_Commit (error: 0x%08X)", static_cast<unsigned int>(err));
         return CDMi_S_FALSE;
+        }
+
+        // Save the new decryption context to our member map, and make it the
+        // active one.
+        mDecryptContextMap.insert(std::make_pair(keyIdVec, newDecryptContext));
+        m_oDecryptContext = newDecryptContext;
     }
     
     if (result == CDMi_SUCCESS) {
         m_fCommit = TRUE;
-        m_decryptInited = true;
         m_eKeyState = KEY_READY;
         LOGGER(LINFO_, "Key processed, now ready for content decryption");
     }
@@ -282,6 +294,15 @@ CDMi_RESULT MediaKeySession::CancelChallengeDataExt()
 
 CDMi_RESULT MediaKeySession::CleanDecryptContext()
 {
+    // Close all decryptors that were created on this session
+    for (DecryptContextMap::iterator it = mDecryptContextMap.begin(); it != mDecryptContextMap.end(); ++it)
+    {
+        PrintBase64(DRM_ID_SIZE, &it->first[0], "Drm_Reader_Close for keyId");
+        Drm_Reader_Close(it->second);
+    }
+    m_oDecryptContext = nullptr;
+    mDecryptContextMap.clear();
+    
     return CDMi_SUCCESS;
 }
 

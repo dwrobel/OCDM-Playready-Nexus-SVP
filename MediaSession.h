@@ -206,6 +206,9 @@ private:
 
     bool m_decryptInited;
     bool mInitiateChallengeGeneration;
+
+    typedef std::map<std::vector<uint8_t>, DRM_DECRYPT_CONTEXT* > DecryptContextMap;
+    DecryptContextMap mDecryptContextMap;
 };
 
 } // namespace CDMi
