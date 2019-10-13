@@ -126,6 +126,7 @@ public:
     }
 
     ~PlayReady(void) {
+        ASSERT(m_poAppContext.get() == nullptr);
         NxClient_Free(&m_nxAllocResults);
         NxClient_Uninit();
     }
@@ -240,11 +241,9 @@ public:
     }
 
     CDMi_RESULT DestroyMediaKeySession(IMediaKeySession *f_piMediaKeySession) {
+        SafeCriticalSection systemLock(drmAppContextMutex_);
         MediaKeySession * mediaKeySession = dynamic_cast<MediaKeySession *>(f_piMediaKeySession);
         ASSERT((mediaKeySession != nullptr) && "Expected a locally allocated MediaKeySession");
-
-        // TODO: is this call still needed? Can't we move it to the destructor?
-        mediaKeySession->UninitializeContext();
 
         delete f_piMediaKeySession;
         f_piMediaKeySession= nullptr;
@@ -263,14 +262,6 @@ public:
         // time. A real implementation would be more complicated, perhaps getting
         // time from some sort of secure and/or anti-rollback resource.
         return static_cast<uint64_t>(time(NULL));
-    }
-
-    // Destroy a MediaKeySession instance.
-    virtual CDMi_RESULT DestroyMediaKeySessionExt(IMediaKeySession* f_piMediaKeySession){
-        SafeCriticalSection systemLock(drmAppContextMutex_);
-        delete f_piMediaKeySession;
-
-        return CDMi_SUCCESS;
     }
     
     std::string GetVersionExt() const override
@@ -641,10 +632,6 @@ public:
         DRM_DWORD dwEncryptionMode  = OEM_TEE_DECRYPTION_MODE_NOT_SECURE;
 
         LOGGER(LINFO_, "Creating System Ext, Build: %s", __TIMESTAMP__ );
-                
-        if (m_poAppContext.get() != nullptr) {
-           m_poAppContext.reset();
-        }
 
         std::string rdir(m_readDir);
 
@@ -825,7 +812,7 @@ private:
     DRM_DWORD m_cbOpaqueBuffer;
 
     DRM_BYTE *m_pbRevocationBuffer ;
-    std::shared_ptr<DRM_APP_CONTEXT> m_poAppContext;
+    std::unique_ptr<DRM_APP_CONTEXT> m_poAppContext;
 
     std::string m_readDir;
     std::string m_storeLocation;
