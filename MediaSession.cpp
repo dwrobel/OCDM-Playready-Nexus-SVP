@@ -797,7 +797,7 @@ CDMi_RESULT MediaKeySession::Close(void)
 
         if (m_pbOpaqueBuffer != nullptr) {
             SAFE_OEM_FREE(m_pbOpaqueBuffer);
-            m_cbOpaqueBuffer = nullptr;
+            m_pbOpaqueBuffer = nullptr;
         }
     }
 
