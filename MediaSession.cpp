@@ -56,8 +56,6 @@ struct Rpc_Secbuf_Info {
     size_t   size;
     void    *token;
     void    *token_enc;
-    uint32_t subsamples_count;
-    uint32_t subsamples[];
 };
 
 namespace CDMi {
@@ -216,7 +214,7 @@ bool MediaKeySession::LoadRevocationList(const char *revListFile)
         int rc = fread(buf, 1, sizeof(buf), fRev);
         if(rc<=0) {
             break;
-        }
+       }
         BKNI_Memcpy(revBuf+currSize, buf, rc);
         currSize += rc;
     }
@@ -898,18 +896,19 @@ CDMi_RESULT MediaKeySession::Decrypt(
 
         // Update payloadDataSize to the buffer size
         payloadDataSize = pRPCsecureBufferInfo->size;
-    // copy all samples data including clear one too
-    B_Secbuf_ImportData(pOpaqueData, 0, (unsigned char*)pOpaqueDataEnc, pRPCsecureBufferInfo->size, 1);
 
-    ChkDR( Drm_Reader_DecryptOpaque(
-            m_oDecryptContext,
-            pRPCsecureBufferInfo->subsamples_count,
-            pRPCsecureBufferInfo->subsamples,
-            oAESContext.qwInitializationVector,
-            payloadDataSize,
-            (DRM_BYTE*)pOpaqueDataEnc,
-            (DRM_DWORD*)&payloadDataSize,
-            (DRM_BYTE**)&pOpaqueData));
+        uint32_t subsamples[2];
+        subsamples[0] = 0;
+        subsamples[1] = payloadDataSize;
+        ChkDR(Drm_Reader_DecryptOpaque(
+                m_oDecryptContext,
+                2,
+                subsamples,
+                oAESContext.qwInitializationVector,
+                payloadDataSize,
+                (DRM_BYTE*)pOpaqueDataEnc,
+                (DRM_DWORD*)&payloadDataSize,
+                (DRM_BYTE**)&pOpaqueData));
 
         cr = CDMi_SUCCESS;
     }
