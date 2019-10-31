@@ -773,22 +773,13 @@ CDMi_RESULT MediaKeySession::Close(void)
     m_eKeyState = KEY_CLOSED;
 
     if (m_poAppContext != nullptr) {
-        LOGGER(LINFO_, "PlayReady session licenses cleanup");
+        LOGGER(LINFO_, "Licenses cleanup");
         // Delete all the licenses added by this session
         DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &mBatchId);
         // Since there are multiple licenses in a batch, we might have already cleared
         // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
         if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
             LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
-        }
-
-        // Deletes all expired licenses from the license store and perform maintenance
-        dr = Drm_StoreMgmt_CleanupStore(m_poAppContext,
-                                        DRM_STORE_CLEANUP_ALL,
-                                        nullptr, 0, nullptr);
-        if(DRM_FAILED(dr))
-        {
-            LOGGER(LERROR_,  "Warning, Drm_StoreMgmt_CleanupStore returned 0x%08lX", dr);
         }
     }
 
@@ -799,7 +790,7 @@ CDMi_RESULT MediaKeySession::Close(void)
         }
 
         if (m_poAppContext != nullptr) {
-            LOGGER(LINFO_, "PlayReady Session Uninitialize");
+            LOGGER(LINFO_, "DRM Uninitialize");
             Drm_Uninitialize(m_poAppContext);
 
             SAFE_OEM_FREE(m_poAppContext);
@@ -813,7 +804,7 @@ CDMi_RESULT MediaKeySession::Close(void)
     }
 
     if (m_oDecryptContext != nullptr) {
-        LOGGER(LINFO_, "PlayReady Session Destructed");
+        LOGGER(LINFO_, "Closing active decrypt context");
         Drm_Reader_Close(m_oDecryptContext);
         delete m_oDecryptContext;
         m_oDecryptContext = nullptr;
