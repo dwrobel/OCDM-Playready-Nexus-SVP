@@ -140,22 +140,17 @@ public:
         NEXUS_MemoryAllocationSettings heapSettings;
         DRM_RESULT dr = DRM_SUCCESS;
 
-        string persistentPath = shell->PersistentPath() + string("/playready");
-        string statePath = persistentPath + "/state"; // To store rollback clock state etc
-        m_readDir = persistentPath + "/playready";
-        m_storeLocation = persistentPath + "/playready/storage/drmstore";
+        string persistentPath = shell->PersistentPath() + string("playready/");
+        m_readDir = persistentPath;
+        m_storeLocation = persistentPath + "drmstore";
 
         LOGGER(LINFO_,  "m_readDir: %s", m_readDir.c_str());
         LOGGER(LINFO_,  "m_storeLocation: %s", m_storeLocation.c_str());
 
-        WPEFramework::Core::Directory stateDir(statePath.c_str());
-        stateDir.CreatePath();
-
-        std::string storeDir = persistentPath + "/playready/storage";
-        WPEFramework::Core::Directory storeDirectory(storeDir.c_str());
+        WPEFramework::Core::Directory storeDirectory(persistentPath.c_str());
         storeDirectory.CreatePath();
 
-        WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), statePath);
+        WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), persistentPath);
 
         /* Drm_Platform_Initialize */
         NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
@@ -189,27 +184,20 @@ public:
 
     void Deinitialize(const WPEFramework::PluginHost::IShell * shell)
     {
-        if(!m_poAppContext.get()) {
-            LOGGER(LERROR_,  "Error, no app context yet");
-        }
+        if(m_poAppContext.get()) {
+            // Deletes all expired licenses from the license store and perform maintenance
+            DRM_RESULT dr = Drm_StoreMgmt_CleanupStore(m_poAppContext.get(),
+                                            DRM_STORE_CLEANUP_ALL,
+                                            nullptr, 0, nullptr);
+            if(DRM_FAILED(dr))
+            {
+                LOGGER(LERROR_,  "Warning, Drm_StoreMgmt_CleanupStore returned 0x%08lX", dr);
+            }
 
-        DRM_RESULT dr;
-        dr = Drm_Reader_Commit(m_poAppContext.get(), nullptr, nullptr);
-        if(DRM_FAILED(dr)) {
-            LOGGER(LERROR_,  "Warning, Drm_Reader_Commit returned 0x%08lX", dr);
+            // Uninitialize drm context
+            Drm_Uninitialize(m_poAppContext.get());
+            m_poAppContext.reset();
         }
-
-        dr = Drm_StoreMgmt_CleanupStore(m_poAppContext.get(),
-                                         DRM_STORE_CLEANUP_ALL,
-                                         nullptr, 0, nullptr);
-        if(DRM_FAILED(dr))
-        {
-            LOGGER(LERROR_,  "Warning, Drm_StoreMgmt_CleanupStore returned 0x%08lX", dr);
-        }
-
-        // Uninitialize drm context
-        Drm_Uninitialize(m_poAppContext.get());
-        m_poAppContext.reset();
 
         Drm_Platform_Uninitialize(m_drmOemContext);
     }
@@ -663,49 +651,49 @@ public:
             goto ErrorExit;
         }
 
-        dr = Drm_SecureTime_GetValue( m_poAppContext.get(), &ftSystemTime, &eClockType  );
-        if( (dr == DRM_E_SECURETIME_CLOCK_NOT_SET) || (dr == DRM_E_TEE_PROVISIONING_REQUIRED) )
-        {
-            /* setup the Playready secure clock */
-            if(InitSecureClock(m_poAppContext.get()) != 0)
+            dr = Drm_SecureTime_GetValue( m_poAppContext.get(), &ftSystemTime, &eClockType  );
+            if( (dr == DRM_E_SECURETIME_CLOCK_NOT_SET) || (dr == DRM_E_TEE_PROVISIONING_REQUIRED) )
             {
-                LOGGER(LERROR_, "Failed to initiize Secure Clock, quitting...");
-                goto ErrorExit;
+                /* setup the Playready secure clock */
+                if(InitSecureClock(m_poAppContext.get()) != 0)
+                {
+                    LOGGER(LERROR_, "Failed to initiize Secure Clock, quitting...");
+                    goto ErrorExit;
+                }
             }
-        }
-        else if (dr == DRM_E_CLK_NOT_SUPPORTED)  /* Secure Clock not supported, try the Anti-Rollback Clock */
-        {
-            DRMSYSTEMTIME   systemTime;
-            struct timeval  tv;
-            struct tm      *tm;
-
-            LOGGER(LINFO_, "Secure Clock not supported, trying the Anti-Rollback Clock...");
-
-            gettimeofday(&tv, nullptr);
-            tm = gmtime(&tv.tv_sec);
-
-            systemTime.wYear         = tm->tm_year+1900;
-            systemTime.wMonth        = tm->tm_mon+1;
-            systemTime.wDayOfWeek    = tm->tm_wday;
-            systemTime.wDay          = tm->tm_mday;
-            systemTime.wHour         = tm->tm_hour;
-            systemTime.wMinute       = tm->tm_min;
-            systemTime.wSecond       = tm->tm_sec;
-            systemTime.wMilliseconds = tv.tv_usec/1000;
-
-            if(Drm_AntiRollBackClock_Init(m_poAppContext.get(), &systemTime) != 0)
+            else if (dr == DRM_E_CLK_NOT_SUPPORTED)  /* Secure Clock not supported, try the Anti-Rollback Clock */
             {
-                LOGGER(LERROR_, "Failed to initiize Anti-Rollback Clock, quitting....");
-                goto ErrorExit;
+                DRMSYSTEMTIME   systemTime;
+                struct timeval  tv;
+                struct tm      *tm;
+
+                LOGGER(LINFO_, "Secure Clock not supported, trying the Anti-Rollback Clock...");
+
+                gettimeofday(&tv, nullptr);
+                tm = gmtime(&tv.tv_sec);
+
+                systemTime.wYear         = tm->tm_year+1900;
+                systemTime.wMonth        = tm->tm_mon+1;
+                systemTime.wDayOfWeek    = tm->tm_wday;
+                systemTime.wDay          = tm->tm_mday;
+                systemTime.wHour         = tm->tm_hour;
+                systemTime.wMinute       = tm->tm_min;
+                systemTime.wSecond       = tm->tm_sec;
+                systemTime.wMilliseconds = tv.tv_usec/1000;
+
+                if(Drm_AntiRollBackClock_Init(m_poAppContext.get(), &systemTime) != 0)
+                {
+                    LOGGER(LERROR_, "Failed to initiize Anti-Rollback Clock, quitting....");
+                    goto ErrorExit;
+                }
             }
-        }
-        else
-        {
-            if (dr != 0) {
-                LOGGER(LERROR_, "Expect platform to support Secure Clock or Anti-Rollback Clock. Possible certificate (error 0x%08X)", static_cast<unsigned int>(dr));
-                goto ErrorExit;
+            else
+            {
+                if (dr != 0) {
+                    LOGGER(LERROR_, "Expect platform to support Secure Clock or Anti-Rollback Clock. Possible certificate (error 0x%08X)", static_cast<unsigned int>(dr));
+                    goto ErrorExit;
+                }
             }
-        }
 
         // Specify the initial size of the in-memory license store. The store will
         // grow above this size if required during usage, using a memory-doubling
@@ -732,13 +720,13 @@ public:
             }
         }
 
-        /* set encryption/decryption mode */
-        dwEncryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
-        ChkDR(Drm_Content_SetProperty(
-                m_poAppContext.get(),
-                DRM_CSP_DECRYPTION_OUTPUT_MODE,
-                (const DRM_BYTE*)&dwEncryptionMode,
-                sizeof( DRM_DWORD ) ) );
+            /* set encryption/decryption mode */
+            dwEncryptionMode = OEM_TEE_DECRYPTION_MODE_HANDLE;
+            ChkDR(Drm_Content_SetProperty(
+                    m_poAppContext.get(),
+                    DRM_CSP_DECRYPTION_OUTPUT_MODE,
+                    (const DRM_BYTE*)&dwEncryptionMode,
+                    sizeof( DRM_DWORD ) ) );
     ErrorExit:
         if (DRM_FAILED(dr)) {
             m_poAppContext.reset();
