@@ -772,20 +772,33 @@ CDMi_RESULT MediaKeySession::Close(void)
 {
     m_eKeyState = KEY_CLOSED;
 
+    if (m_poAppContext != nullptr) {
+        LOGGER(LINFO_, "PlayReady session licenses cleanup");
+        // Delete all the licenses added by this session
+        DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &mBatchId);
+        // Since there are multiple licenses in a batch, we might have already cleared
+        // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
+        if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
+            LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
+        }
+
+        // Deletes all expired licenses from the license store and perform maintenance
+        dr = Drm_StoreMgmt_CleanupStore(m_poAppContext,
+                                        DRM_STORE_CLEANUP_ALL,
+                                        nullptr, 0, nullptr);
+        if(DRM_FAILED(dr))
+        {
+            LOGGER(LERROR_,  "Warning, Drm_StoreMgmt_CleanupStore returned 0x%08lX", dr);
+        }
+    }
+
     if (mInitiateChallengeGeneration == true) {
         if (m_pbRevocationBuffer != nullptr) {
             SAFE_OEM_FREE(m_pbRevocationBuffer);
             m_pbRevocationBuffer = nullptr;
         }
 
-        if (m_poAppContext !=  nullptr) {
-            DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &mBatchId);
-            // Since there are multiple licenses in a batch, we might have already cleared
-            // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
-            if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
-                LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
-            }
-
+        if (m_poAppContext != nullptr) {
             LOGGER(LINFO_, "PlayReady Session Uninitialize");
             Drm_Uninitialize(m_poAppContext);
 
