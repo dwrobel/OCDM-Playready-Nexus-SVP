@@ -676,7 +676,7 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
 
     LOGGER(LINFO_, "Processing license acquisition response...");
     ChkDR(Drm_LicenseAcq_ProcessResponse(m_poAppContext,
-                                        DRM_PROCESS_LIC_RESPONSE_NO_FLAGS,
+                                        DRM_PROCESS_LIC_RESPONSE_SIGNATURE_NOT_REQUIRED,
                                         const_cast<DRM_BYTE *>(f_pbKeyMessageResponse),
                                         f_cbKeyMessageResponse,
                                         &oLicenseResponse));
