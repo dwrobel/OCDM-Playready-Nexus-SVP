@@ -262,7 +262,7 @@ public:
                 versionStr, MAXLEN);
         ((DRM_BYTE*)versionStr)[g_dstrReqTagPlayReadyClientVersionData.cchString] = 0;
         PackedCharsToNative(versionStr, g_dstrReqTagPlayReadyClientVersionData.cchString + 1);
-        LOGGER(LERROR_, "Version %s.", versionStr);
+        LOGGER(LINFO_, "Version %s.", versionStr);
         
         //return std::string("2.5.0.0000");
         return std::string(versionStr);
@@ -270,7 +270,6 @@ public:
 
     uint32_t GetLdlSessionLimit() const override
     {
-        LOGGER(LERROR_, "Store size: %d.", NONCE_STORE_SIZE);
         return NONCE_STORE_SIZE;
     }
 
@@ -345,19 +344,27 @@ public:
         ASSERT(sizeof(ssSessionDrmId.rgb) >= sessionIDLength);
         memcpy(ssSessionDrmId.rgb, sessionID, sessionIDLength);
 
+        DRM_DWORD ssChallengeSize;
+        DRM_BYTE *ssChallenge;
+
         DRM_RESULT dr = Drm_SecureStop_GenerateChallenge(
                 m_poAppContext.get(),
                 &ssSessionDrmId,
                 0, //playready3MeteringCertSize,
                 nullptr, //playready3MeteringCert,
                 0, nullptr, // no custom data
-                (DRM_DWORD*)&rawSize,
-                &rawData);
+                &ssChallengeSize,
+                &ssChallenge);
 
         if (dr != DRM_SUCCESS) {
             LOGGER(LERROR_, "Error in Drm_SecureStop_GenerateChallenge (error: 0x%08X)", static_cast<unsigned int>(dr));
             cr = CDMi_S_FALSE;
-        } 
+        } else {
+            if((rawData != nullptr) && (rawSize >= ssChallengeSize)){
+                memcpy(rawData, ssChallenge, ssChallengeSize);
+            } 
+            rawSize = ssChallengeSize; 
+        }
 
         return cr;
     }
