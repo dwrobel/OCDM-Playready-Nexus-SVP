@@ -319,7 +319,7 @@ public:
                 memcpy(&ids[i * DRM_ID_SIZE], ssSessionIds[i].rgb, DRM_ID_SIZE);
             }
 
-            Oem_MemFree(ssSessionIds);
+            SAFE_OEM_FREE(ssSessionIds);
 
             if (count) {
                 LOGGER(LINFO_, "found %d pending secure stop%s", count, (count > 1) ? "s" : "");
@@ -420,7 +420,7 @@ public:
                 LOGGER(LERROR_, "Drm_SecureStop_ProcessResponse returned 0x%lx", static_cast<unsigned long>(dr));
             }
 
-            Oem_MemFree(pCustomData);
+            SAFE_OEM_FREE(pCustomData);
         }
 
         return cr;
@@ -601,15 +601,10 @@ public:
 
         /* NOW testing the system time */
 
-        ErrorExit:
-
-        ChkVOID( SAFE_OEM_FREE( pbChallenge ) );
-
-        if( pTimeChallengeURL    != nullptr)
-            NEXUS_Memory_Free(pTimeChallengeURL  );
-
-        if( pbResponse != nullptr )
-            NEXUS_Memory_Free(pbResponse);
+    ErrorExit:
+        SAFE_OEM_FREE(pbChallenge);
+        SAFE_OEM_FREE(pTimeChallengeURL);
+        SAFE_OEM_FREE(pbResponse);
 
         return rc;
     }

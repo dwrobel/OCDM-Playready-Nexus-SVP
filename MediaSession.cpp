@@ -1071,15 +1071,10 @@ int MediaKeySession::InitSecureClock(DRM_APP_CONTEXT *pDrmAppCtx)
 
     /* NOW testing the system time */
 
-    ErrorExit:
-
-    ChkVOID( SAFE_OEM_FREE( pbChallenge ) );
-
-    if( pTimeChallengeURL    != nullptr)
-        NEXUS_Memory_Free(pTimeChallengeURL  );
-
-    if( pbResponse != nullptr )
-        NEXUS_Memory_Free(pbResponse);
+ErrorExit:
+    SAFE_OEM_FREE(pbChallenge);
+    SAFE_OEM_FREE(pTimeChallengeURL);
+    SAFE_OEM_FREE(pbResponse);
 
     return rc;
 }
