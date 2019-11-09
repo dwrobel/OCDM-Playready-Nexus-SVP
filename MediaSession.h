@@ -53,23 +53,7 @@ const DRM_DWORD MAX_NUM_LICENSES = 200;    // max number of licenses (ask the Re
         }while( 0 )
 
 namespace CDMi {
-struct PlayLevels {
-    uint16_t compressedDigitalVideoLevel_;   //!< Compressed digital video output protection level.
-    uint16_t uncompressedDigitalVideoLevel_; //!< Uncompressed digital video output protection level.
-    uint16_t analogVideoLevel_;              //!< Analog video output protection level.
-    uint16_t compressedDigitalAudioLevel_;   //!< Compressed digital audio output protection level.
-    uint16_t uncompressedDigitalAudioLevel_; //!< Uncompressed digital audio output protection level.
-};
 
-class LicenseResponse {
-public:
-    LicenseResponse() : dlr(new DRM_LICENSE_RESPONSE) {}
-    ~LicenseResponse() { delete dlr; }
-    DRM_LICENSE_RESPONSE * get() { return dlr; }
-    void clear() { memset(dlr, 0, sizeof(DRM_LICENSE_RESPONSE)); }
-private:
-    DRM_LICENSE_RESPONSE * const dlr;
-};
 
 class MediaKeySession : public IMediaKeySession, public IMediaKeySessionExt {
 private:
@@ -199,9 +183,6 @@ private:
     std::vector<uint8_t> mDrmHeader;
     uint32_t m_SessionId;
     DRM_ID mBatchId;
-
-    std::unique_ptr<LicenseResponse> mLicenseResponse;
-    PlayLevels levels_;
 
     bool m_decryptInited;
     bool mInitiateChallengeGeneration;
