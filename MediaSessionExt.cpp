@@ -2,10 +2,12 @@
 
 #include <drmbytemanip.h>
 #include <drmsecurestoptypes.h>
+#include <drmconstants.h>
 
 #include <iostream>
 #include <stdio.h>
 #include <sstream>
+#include <byteswap.h>
 
 using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
 extern WPEFramework::Core::CriticalSection drmAppContextMutex_;
@@ -21,6 +23,8 @@ struct CallbackInfo
     uint16_t _analogVideo;
     uint16_t _compressedAudio;
     uint16_t _uncompressedAudio;
+    uint32_t _maxDecodeWidth;
+    uint32_t _maxDecodeHeight;
 };
 
 static void * PlayLevelUpdateCallback(void * data)
@@ -33,7 +37,9 @@ static void * PlayLevelUpdateCallback(void * data)
     keyMessage << "\"uncompressed-video\": " << callbackInfo->_uncompressedVideo << ",";
     keyMessage << "\"analog-video\": " << callbackInfo->_analogVideo << ",";
     keyMessage << "\"compressed-audio\": " << callbackInfo->_compressedAudio << ",";
-    keyMessage << "\"uncompressed-audio\": " << callbackInfo->_uncompressedAudio;
+    keyMessage << "\"uncompressed-audio\": " << callbackInfo->_uncompressedAudio << ",";
+    keyMessage << "\"max-decode-width\": " << callbackInfo->_maxDecodeWidth << ",";
+    keyMessage << "\"max-decode-height\": " << callbackInfo->_maxDecodeHeight;
     keyMessage << "}";
 
     std::string keyMessageStr = keyMessage.str();
@@ -47,34 +53,70 @@ static void * PlayLevelUpdateCallback(void * data)
     return nullptr;
 }
 
-static DRM_RESULT opencdm_output_levels_callback(
+void UpdateSession(const MediaKeySession::DecryptContext* decryptContext)
+{
+    if (decryptContext->callback != nullptr) {
+        CallbackInfo * callbackInfo = new CallbackInfo;
+        callbackInfo->_callback = const_cast<IMediaKeySessionCallback *>(decryptContext->callback);
+        callbackInfo->_compressedVideo = decryptContext->outputProtection.compressedDigitalVideoLevel;
+        callbackInfo->_uncompressedVideo = decryptContext->outputProtection.uncompressedDigitalVideoLevel;
+        callbackInfo->_analogVideo = decryptContext->outputProtection.analogVideoLevel;
+        callbackInfo->_compressedAudio = decryptContext->outputProtection.compressedDigitalAudioLevel;
+        callbackInfo->_uncompressedAudio = decryptContext->outputProtection.uncompressedDigitalAudioLevel;
+        callbackInfo->_maxDecodeWidth = decryptContext->outputProtection.maxResDecodeWidth;
+        callbackInfo->_maxDecodeHeight = decryptContext->outputProtection.maxResDecodeHeight;
+
+        // Run on a new thread, so we don't go too deep in the IPC callstack.
+        pthread_t threadId;
+        pthread_create(&threadId, nullptr, PlayLevelUpdateCallback, callbackInfo);
+    } 
+}
+
+DRM_RESULT opencdm_output_levels_callback(
     const DRM_VOID *outputLevels, 
     DRM_POLICY_CALLBACK_TYPE callbackType,    
     const DRM_KID */*f_pKID*/,
     const DRM_LID */*f_pLID*/,
     const DRM_VOID *data) {
     // We only care about the play callback.
-    if (callbackType != DRM_PLAY_OPL_CALLBACK)
+    if (callbackType != DRM_PLAY_OPL_CALLBACK){
         return DRM_SUCCESS;
+    } 
 
-    const IMediaKeySessionCallback * constSessionCallback = reinterpret_cast<const IMediaKeySessionCallback *>(data);
-    if (constSessionCallback != nullptr) {
-        CallbackInfo * callbackInfo = new CallbackInfo;
-        callbackInfo->_callback = const_cast<IMediaKeySessionCallback *>(constSessionCallback);
+    MediaKeySession::DecryptContext * const decryptContext = const_cast<MediaKeySession::DecryptContext *>(static_cast<const MediaKeySession::DecryptContext*>(data));
+    const DRM_PLAY_OPL_EX2 * const opl = static_cast<const DRM_PLAY_OPL_EX2 *>(outputLevels);
 
-        // Pull out the protection levels.
-        const DRM_PLAY_OPL_EX* playLevels = static_cast<const DRM_PLAY_OPL_EX*>(outputLevels);
-        callbackInfo->_compressedVideo = playLevels->minOPL.wCompressedDigitalVideo;
-        callbackInfo->_uncompressedVideo = playLevels->minOPL.wUncompressedDigitalVideo;
-        callbackInfo->_analogVideo = playLevels->minOPL.wAnalogVideo;
-        callbackInfo->_compressedAudio = playLevels->minOPL.wCompressedDigitalAudio;
-        callbackInfo->_uncompressedAudio = playLevels->minOPL.wUncompressedDigitalAudio;
+    ASSERT(opl->dwVersion == 0);
 
-        // Run on a new thread, so we don't go too deep in the IPC callstack.
-        pthread_t threadId;
-        pthread_create(&threadId, nullptr, PlayLevelUpdateCallback, callbackInfo);
+    decryptContext->outputProtection.setOutputLevels(opl->minOPL);
 
+    // MaxRes Decode
+    const DRM_VIDEO_OUTPUT_PROTECTION_IDS_EX &dvopi = opl->dvopi;
+    for (size_t i = 0; i < dvopi.cEntries; ++i)
+    {
+        const DRM_OUTPUT_PROTECTION_EX &dope = dvopi.rgVop[i];
+        if (DRM_IDENTICAL_GUIDS(&dope.guidId, &g_guidMaxResDecode))
+        {
+            ASSERT(dope.dwVersion == 3);
+            uint32_t mrdWidth, mrdHeight;
+            const int inc = sizeof(uint32_t);
+            ASSERT(dope.cbConfigData >= 2*inc);
+            std::copy(&dope.rgbConfigData[0],   &dope.rgbConfigData[0]   + inc, reinterpret_cast<uint8_t*>(&mrdWidth));
+            std::copy(&dope.rgbConfigData[inc], &dope.rgbConfigData[inc] + inc, reinterpret_cast<uint8_t*>(&mrdHeight));
+            #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+                mrdWidth  = bswap_32(mrdWidth);
+                mrdHeight = bswap_32(mrdHeight);
+            #endif
+            decryptContext->outputProtection.setMaxResDecode(mrdWidth, mrdHeight);
+            printf("%s MaxResDecode: width : %d\theight: %d\n", __FUNCTION__,
+                decryptContext->outputProtection.maxResDecodeWidth, 
+                decryptContext->outputProtection.maxResDecodeHeight);
+            break;
+        }
     }
+    
+    UpdateSession(decryptContext);
+
     // All done.
     return DRM_SUCCESS;
 }
@@ -229,53 +271,58 @@ CDMi_RESULT MediaKeySession::SelectKeyId(const uint8_t keyLength, const uint8_t 
 
     DecryptContextMap::iterator index = mDecryptContextMap.find(keyIdVec);
     // switch from CENC to PlayReady format
-    if (index != mDecryptContextMap.end()) {
+    if ((index != mDecryptContextMap.end()) && (index->second.get())) {
 
         PrintBase64(sizeof(keyIdVec), &keyIdVec[0], 
                         "Found existing decrypt context for keyId");
-        m_oDecryptContext = index->second;
+        m_oDecryptContext = &(index->second->drmDecryptContext);
+        UpdateSession(index->second.get());
     }
     else {
         if (SelectDrmHeader(m_poAppContext, mDrmHeader.size(), &mDrmHeader[0]) != CDMi_SUCCESS){
         return CDMi_S_FALSE;
-    }
+        }
 
-    if (SetKeyId(m_poAppContext, sizeof(keyParam), keyParam) != CDMi_SUCCESS){
-        return CDMi_S_FALSE;
-    }
+        if (SetKeyId(m_poAppContext, sizeof(keyParam), keyParam) != CDMi_SUCCESS){
+            return CDMi_S_FALSE;
+        }
 
-    DRM_DECRYPT_CONTEXT* newDecryptContext = new DRM_DECRYPT_CONTEXT;
-    memset(newDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
+        std::shared_ptr<DecryptContext> newDecryptContext(new DecryptContext(m_piCallback));
 
-    LOGGER(LINFO_, "Drm_Reader_Bind");
-    err = Drm_Reader_Bind(
-            m_poAppContext,
-            g_rgpdstrRightsExt,
-            DRM_NO_OF(g_rgpdstrRightsExt),
-            &opencdm_output_levels_callback, 
-            static_cast<const void*>(m_piCallback),
-            newDecryptContext);
-    if (DRM_FAILED(err))
-    {
-        LOGGER(LERROR_, "Error: Drm_Reader_Bind (error: 0x%08X)", static_cast<unsigned int>(err));
-        return CDMi_S_FALSE;
-    }
+        LOGGER(LINFO_, "Drm_Reader_Bind");
+        err = Drm_Reader_Bind(
+                m_poAppContext,
+                g_rgpdstrRightsExt,
+                DRM_NO_OF(g_rgpdstrRightsExt),
+                &opencdm_output_levels_callback, 
+                static_cast<const void*>(newDecryptContext.get()),
+                &(newDecryptContext->drmDecryptContext));
+        if (DRM_FAILED(err))
+        {
+            LOGGER(LERROR_, "Error: Drm_Reader_Bind (error: 0x%08X)", static_cast<unsigned int>(err));
+            return CDMi_S_FALSE;
+        }
 
-    // Commit all secure store transactions to the DRM store file. For the
-    // Netflix use case, Drm_Reader_Commit only needs to be called after
-    // Drm_Reader_Bind.
-    LOGGER(LINFO_,"Drm_Reader_Commit");
-    err = Drm_Reader_Commit(m_poAppContext, &opencdm_output_levels_callback, static_cast<const void*>(m_piCallback));
-    if (DRM_FAILED(err))
-    {
-        LOGGER(LERROR_, "Error: Drm_Reader_Commit (error: 0x%08X)", static_cast<unsigned int>(err));
-        return CDMi_S_FALSE;
+        // Commit all secure store transactions to the DRM store file. For the
+        // Netflix use case, Drm_Reader_Commit only needs to be called after
+        // Drm_Reader_Bind.
+        LOGGER(LINFO_,"Drm_Reader_Commit");
+        err = Drm_Reader_Commit(m_poAppContext, &opencdm_output_levels_callback, static_cast<const void*>(newDecryptContext.get()));
+        if (DRM_FAILED(err))
+        {
+            LOGGER(LERROR_, "Error: Drm_Reader_Commit (error: 0x%08X)", static_cast<unsigned int>(err));
+            return CDMi_S_FALSE;
         }
 
         // Save the new decryption context to our member map, and make it the
         // active one.
-        mDecryptContextMap.insert(std::make_pair(keyIdVec, newDecryptContext));
-        m_oDecryptContext = newDecryptContext;
+        if (index != mDecryptContextMap.end()) {
+            index->second = newDecryptContext;
+        } else {
+            mDecryptContextMap.insert(std::make_pair(keyIdVec, newDecryptContext));
+        }
+        
+        m_oDecryptContext =  &(newDecryptContext->drmDecryptContext);  
     }
     
     if (result == CDMi_SUCCESS) {
@@ -294,13 +341,17 @@ CDMi_RESULT MediaKeySession::CancelChallengeDataExt()
 
 CDMi_RESULT MediaKeySession::CleanDecryptContext()
 {
+    SafeCriticalSection systemLock(drmAppContextMutex_);
+    
+    m_oDecryptContext = nullptr;
     // Close all decryptors that were created on this session
     for (DecryptContextMap::iterator it = mDecryptContextMap.begin(); it != mDecryptContextMap.end(); ++it)
     {
         PrintBase64(DRM_ID_SIZE, &it->first[0], "Drm_Reader_Close for keyId");
-        Drm_Reader_Close(it->second);
+        if(it->second){
+            Drm_Reader_Close(&(it->second->drmDecryptContext));
+        }
     }
-    m_oDecryptContext = nullptr;
     mDecryptContextMap.clear();
     
     return CDMi_SUCCESS;

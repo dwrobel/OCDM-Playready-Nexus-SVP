@@ -58,7 +58,37 @@ struct Rpc_Secbuf_Info {
     void    *token_enc;
 };
 
+OutputProtection::OutputProtection()
+    : compressedDigitalVideoLevel(0)
+    , uncompressedDigitalVideoLevel(0)
+    , analogVideoLevel(0)
+    , compressedDigitalAudioLevel(0)
+    , uncompressedDigitalAudioLevel(0)
+    , maxResDecodeWidth(0)
+    , maxResDecodeHeight(0)
+{}
+
+void OutputProtection::setOutputLevels(const DRM_MINIMUM_OUTPUT_PROTECTION_LEVELS& opLevels)
+{
+    compressedDigitalVideoLevel   = opLevels.wCompressedDigitalVideo;
+    uncompressedDigitalVideoLevel = opLevels.wUncompressedDigitalVideo;
+    analogVideoLevel              = opLevels.wAnalogVideo;
+    compressedDigitalAudioLevel   = opLevels.wCompressedDigitalAudio;
+    uncompressedDigitalAudioLevel = opLevels.wUncompressedDigitalAudio;
+}
+
+void OutputProtection::setMaxResDecode(uint32_t width, uint32_t height)
+{
+    maxResDecodeWidth  = width;
+    maxResDecodeHeight = height;
+}
 namespace CDMi {
+
+    MediaKeySession::DecryptContext::DecryptContext(IMediaKeySessionCallback* mcallback)
+    : callback(mcallback)
+    {
+        ZEROMEM(&drmDecryptContext, sizeof(DRM_DECRYPT_CONTEXT));
+    }
 
     static const char *DRM_DEFAULT_REVOCATION_LIST_FILE="/tmp/revpackage.xml";
     const DRM_CONST_STRING  *g_rgpdstrRights[1] = {&g_dstrWMDRM_RIGHT_PLAYBACK};
@@ -566,19 +596,26 @@ const char *MediaKeySession::GetKeySystem(void) const
 
 void MediaKeySession::Run(const IMediaKeySessionCallback *f_piMediaKeySessionCallback)
 {
+    LOGGER(LINFO_, "Set session callback to %p", f_piMediaKeySessionCallback);
+    if (f_piMediaKeySessionCallback) {
+        m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
+
+        if (mInitiateChallengeGeneration) {
+            playreadyGenerateKeyRequest();
+        }
+    } else {
+        m_piCallback = nullptr;
+    }
+}
+
+bool MediaKeySession::playreadyGenerateKeyRequest() {
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_BYTE *pbChallenge = nullptr;
     DRM_DWORD cbChallenge = 0;
     DRM_CHAR *pchSilentURL = nullptr;
     DRM_DWORD cchSilentURL = 0;
 
-    // The current state MUST be KEY_INIT otherwise error out.
     if(m_eKeyState == KEY_INIT){
-
-        ChkArg(f_piMediaKeySessionCallback != nullptr);
-
-        m_piCallback = const_cast<IMediaKeySessionCallback *>(f_piMediaKeySessionCallback);
-
         // Try to figure out the size of the license acquisition
         // challenge to be returned.
         dr = Drm_LicenseAcq_GenerateChallenge(m_poAppContext,
@@ -654,6 +691,8 @@ ErrorExit:
 
     SAFE_OEM_FREE(pbChallenge);
     SAFE_OEM_FREE(pchSilentURL);
+
+    return (dr == DRM_SUCCESS);
 }
 
 CDMi_RESULT MediaKeySession::Load(void)

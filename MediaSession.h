@@ -52,6 +52,18 @@ const DRM_DWORD MAX_NUM_LICENSES = 200;    // max number of licenses (ask the Re
             fflush(stdout); \
         }while( 0 )
 
+struct OutputProtection {
+    uint16_t compressedDigitalVideoLevel;   //!< Compressed digital video output protection level.
+    uint16_t uncompressedDigitalVideoLevel; //!< Uncompressed digital video output protection level.
+    uint16_t analogVideoLevel;              //!< Analog video output protection level.
+    uint16_t compressedDigitalAudioLevel;   //!< Compressed digital audio output protection level.
+    uint16_t uncompressedDigitalAudioLevel; //!< Uncompressed digital audio output protection level.
+    uint32_t maxResDecodeWidth;             //!< Max res decode width in pixels.
+    uint32_t maxResDecodeHeight;            //!< Max res decode height in pixels.
+    OutputProtection();
+    void setOutputLevels(const DRM_MINIMUM_OUTPUT_PROTECTION_LEVELS& mopLevels);
+    void setMaxResDecode(uint32_t width, uint32_t height);
+};
 namespace CDMi {
 
 
@@ -76,6 +88,15 @@ private:
         IndividualizationRequest = 3
     };
 public:
+    struct DecryptContext
+    {
+        DRM_DECRYPT_CONTEXT drmDecryptContext;
+        OutputProtection outputProtection;
+        IMediaKeySessionCallback* callback;
+        DecryptContext(IMediaKeySessionCallback* mcallback);
+    };
+    typedef std::map<std::vector<uint8_t>, std::shared_ptr<DecryptContext> > DecryptContextMap;
+
     //static const std::vector<std::string> m_mimeTypes;
 
     MediaKeySession(
@@ -187,7 +208,6 @@ private:
     bool m_decryptInited;
     bool mInitiateChallengeGeneration;
 
-    typedef std::map<std::vector<uint8_t>, DRM_DECRYPT_CONTEXT* > DecryptContextMap;
     DecryptContextMap mDecryptContextMap;
 };
 
