@@ -158,6 +158,9 @@ private:
 
     bool LoadRevocationList(const char *revListFile);
 
+    void CleanLicenseStore(DRM_APP_CONTEXT *pDrmAppCtx);
+    void CleanDecryptContexts();
+
     static DRM_RESULT PolicyCallback(
             const DRM_VOID *f_pvOutputLevelsData,
             DRM_POLICY_CALLBACK_TYPE f_dwCallbackType,

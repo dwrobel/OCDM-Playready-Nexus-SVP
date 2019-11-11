@@ -809,16 +809,9 @@ CDMi_RESULT MediaKeySession::Close(void)
 {
     m_eKeyState = KEY_CLOSED;
 
-    if (m_poAppContext != nullptr) {
-        LOGGER(LINFO_, "Licenses cleanup");
-        // Delete all the licenses added by this session
-        DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(m_poAppContext, &mBatchId);
-        // Since there are multiple licenses in a batch, we might have already cleared
-        // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
-        if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
-            LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
-        }
-    }
+    CleanLicenseStore(m_poAppContext);
+
+    CleanDecryptContexts();
 
     if (mInitiateChallengeGeneration == true) {
         if (m_pbRevocationBuffer != nullptr) {
@@ -838,13 +831,6 @@ CDMi_RESULT MediaKeySession::Close(void)
             SAFE_OEM_FREE(m_pbOpaqueBuffer);
             m_pbOpaqueBuffer = nullptr;
         }
-    }
-
-    if (m_oDecryptContext != nullptr) {
-        LOGGER(LINFO_, "Closing active decrypt context");
-        Drm_Reader_Close(m_oDecryptContext);
-        delete m_oDecryptContext;
-        m_oDecryptContext = nullptr;
     }
 
     m_piCallback = nullptr;
@@ -1114,6 +1100,42 @@ ErrorExit:
     SAFE_OEM_FREE(pbResponse);
 
     return rc;
+}
+
+void MediaKeySession::CleanLicenseStore(DRM_APP_CONTEXT *pDrmAppCtx){
+    if (m_poAppContext != nullptr) {
+        LOGGER(LINFO_, "Licenses cleanup");
+        // Delete all the licenses added by this session
+        DRM_RESULT dr = Drm_StoreMgmt_DeleteInMemoryLicenses(pDrmAppCtx, &mBatchId);
+        // Since there are multiple licenses in a batch, we might have already cleared
+        // them all. Ignore DRM_E_NOMORE returned from Drm_StoreMgmt_DeleteInMemoryLicenses.
+        if (DRM_FAILED(dr) && (dr != DRM_E_NOMORE)) {
+            LOGGER(LERROR_, "Error in Drm_StoreMgmt_DeleteInMemoryLicenses 0x%08lX", dr);
+        }
+    }
+}
+
+void MediaKeySession::CleanDecryptContexts()
+{
+    if (mDecryptContextMap.size() > 0){
+        m_oDecryptContext = nullptr;
+        // Close all decryptors that were created on this session
+        for (DecryptContextMap::iterator it = mDecryptContextMap.begin(); it != mDecryptContextMap.end(); ++it)
+        {
+            PrintBase64(DRM_ID_SIZE, &it->first[0], "Drm_Reader_Close for keyId");
+            if(it->second){
+                Drm_Reader_Close(&(it->second->drmDecryptContext));
+            }
+        }
+        mDecryptContextMap.clear();
+    }
+
+    if (m_oDecryptContext != nullptr) {
+        LOGGER(LINFO_, "Closing active decrypt context");
+        Drm_Reader_Close(m_oDecryptContext);
+        delete m_oDecryptContext;
+        m_oDecryptContext = nullptr;
+    }
 }
 
 }  // namespace CDMi

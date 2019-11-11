@@ -343,17 +343,8 @@ CDMi_RESULT MediaKeySession::CleanDecryptContext()
 {
     SafeCriticalSection systemLock(drmAppContextMutex_);
     
-    m_oDecryptContext = nullptr;
-    // Close all decryptors that were created on this session
-    for (DecryptContextMap::iterator it = mDecryptContextMap.begin(); it != mDecryptContextMap.end(); ++it)
-    {
-        PrintBase64(DRM_ID_SIZE, &it->first[0], "Drm_Reader_Close for keyId");
-        if(it->second){
-            Drm_Reader_Close(&(it->second->drmDecryptContext));
-        }
-    }
-    mDecryptContextMap.clear();
-    
+    CleanDecryptContexts();
+
     return CDMi_SUCCESS;
 }
 
