@@ -291,7 +291,7 @@ public:
         return 0;
     }
 
-    CDMi_RESULT GetSecureStopIds(uint8_t ids[], uint8_t /* idSize */, uint32_t & count)
+    CDMi_RESULT GetSecureStopIds(uint8_t ids[], uint16_t idsLength, uint32_t & count)
     {
         SafeCriticalSection lock(drmAppContextMutex_);
 
@@ -311,20 +311,20 @@ public:
             LOGGER(LERROR_, "Error in Drm_SecureStop_EnumerateSessions (error: 0x%08X)", static_cast<unsigned int>(dr));
             cr = CDMi_S_FALSE;
         } else {
-            ASSERT(count == 0 || ssSessionIds != NULL);
-            
+            ASSERT((count * DRM_ID_SIZE) > idsLength);
+                    
             for (uint32_t i = 0; i < count; ++i)
             {
                 ASSERT(sizeof(ssSessionIds[i].rgb) == DRM_ID_SIZE);
                 memcpy(&ids[i * DRM_ID_SIZE], ssSessionIds[i].rgb, DRM_ID_SIZE);
             }
 
-            SAFE_OEM_FREE(ssSessionIds);
-
             if (count) {
-                LOGGER(LINFO_, "found %d pending secure stop%s", count, (count > 1) ? "s" : "");
+                LOGGER(LINFO_, "Found %d pending secure stop%s", count, (count > 1) ? "s" : "");
             }
         }
+        
+        SAFE_OEM_FREE(ssSessionIds);
 
         return cr;
     }
