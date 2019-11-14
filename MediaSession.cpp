@@ -403,12 +403,14 @@ DRM_RESULT MediaKeySession::PolicyCallback(
         , m_SessionId()
         , mBatchId()
         , m_decryptInited(false)
-        , mInitiateChallengeGeneration(initiateChallengeGeneration){
+        , mInitiateChallengeGeneration(initiateChallengeGeneration)
+        , pNexusMemory(nullptr)
+        , mNexusMemorySize(512 * 1024) {
 
     LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
     m_oDecryptContext = new DRM_DECRYPT_CONTEXT;
     memset(m_oDecryptContext, 0, sizeof(DRM_DECRYPT_CONTEXT));
-        
+
     DRM_RESULT dr = DRM_SUCCESS;
     DRM_ID oSessionID;
     DRM_DWORD cchEncodedSessionID = sizeof(m_rgchSessionID);
@@ -578,6 +580,10 @@ ErrorExit:
 MediaKeySession::~MediaKeySession(void)
 {
     Close();
+
+    if (!pNexusMemory)
+        NEXUS_Memory_Free(pNexusMemory);
+
     LOGGER(LINFO_, "PlayReady Session Destructed");
 }
 
@@ -749,7 +755,7 @@ void MediaKeySession::Update(const uint8_t *f_pbKeyMessageResponse, uint32_t  f_
     ChkDR(dr);
 
     ChkDR( Drm_Reader_Commit( m_poAppContext, nullptr, nullptr ) );
-            
+
     m_eKeyState = KEY_READY;
     LOGGER(LINFO_, "Key processed, now ready for content decryption");
 
@@ -855,8 +861,7 @@ CDMi_RESULT MediaKeySession::Decrypt(
         const uint8_t* /* keyId */,
         bool initWithLast15)
 {
-    SafeCriticalSection systemLock(drmAppContextMutex_); 
-    
+    SafeCriticalSection systemLock(drmAppContextMutex_);
     if (!m_oDecryptContext) {
         LOGGER(LERROR_, "Error: no decrypt context (yet?)\n");
         return CDMi_S_FALSE;
@@ -865,10 +870,10 @@ CDMi_RESULT MediaKeySession::Decrypt(
     DRM_RESULT dr = DRM_SUCCESS;
     CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
-    Rpc_Secbuf_Info *pRPCsecureBufferInfo = const_cast<Rpc_Secbuf_Info*>(reinterpret_cast<const Rpc_Secbuf_Info*>(payloadData));
-    B_Secbuf_Info   secureBufferInfo;
     void *pOpaqueData = nullptr;
-    void *pOpaqueDataEnc = nullptr;
+    NEXUS_MemoryBlockHandle pNexusMemoryBlock;
+    NEXUS_MemoryBlockTokenHandle token;
+    static NEXUS_HeapHandle secureHeap = NEXUS_Heap_Lookup(NEXUS_HeapLookupType_eCompressedRegion);
 
     {
         ChkArg(payloadData != nullptr && payloadDataSize > 0);
@@ -906,60 +911,78 @@ CDMi_RESULT MediaKeySession::Decrypt(
        memcpy(&oAESContext.qwInitializationVector, f_pbIV, f_cbIV);
     }
 
+    // Reallocate input memory if needed.
+    if (payloadDataSize >  mNexusMemorySize) {
 
-    if (B_Secbuf_AllocWithToken(pRPCsecureBufferInfo->size, B_Secbuf_Type_eGeneric, pRPCsecureBufferInfo->token_enc, &pOpaqueDataEnc)) {
-        LOGGER(LERROR_, "B_Secbuf_AllocWithToken(%d, B_Secbuf_Type_eGeneric, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueDataEnc);
+        void *newBuffer = nullptr;
+        int rc = NEXUS_Memory_Allocate(payloadDataSize, nullptr, &newBuffer);
+        if( rc != 0 ) {
+            LOGGER(LERROR_, "NexusMemory to small, use larger buffer. could not allocate memory %d", payloadDataSize);
+            goto ErrorExit;
+        }
+
+        NEXUS_Memory_Free(pNexusMemory);
+        pNexusMemory = newBuffer;
+        mNexusMemorySize = payloadDataSize;
+        LOGGER(LINFO_, "NexusMemory to small, use larger buffer.  %d", payloadDataSize);
+    }
+
+    pNexusMemoryBlock = NEXUS_MemoryBlock_Allocate(secureHeap, payloadDataSize, 0, nullptr);
+    if (!pNexusMemoryBlock) {
+
+        LOGGER(LERROR_, "NexusBlockMemory could not allocate %d", payloadDataSize);
         goto ErrorExit;
     }
 
-    // copy data in the generic buffer to the secure buffer
-    if (B_Secbuf_Alloc(pRPCsecureBufferInfo->size, B_Secbuf_Type_eSecure, &pOpaqueData)) {
-        LOGGER(LERROR_, "B_Secbuf_Alloc(%d, B_Secbuf_Type_eSecure, %p) failed!", pRPCsecureBufferInfo->size, &pOpaqueData);
+    NEXUS_Error rc;
+    rc = NEXUS_MemoryBlock_Lock(pNexusMemoryBlock, &pOpaqueData);
+    if (rc) {
+
+        LOGGER(LERROR_, "NexusBlockMemory is not usable");
+        NEXUS_MemoryBlock_Free(pNexusMemoryBlock);
+        pOpaqueData = nullptr;
+        goto ErrorExit;
     }
-     else {
-        // Update token for WPE to get the secure buffer
-        B_Secbuf_GetBufferInfo(pOpaqueData, &secureBufferInfo);
-        pRPCsecureBufferInfo->token = secureBufferInfo.token;
 
-        // Update payloadDataSize to the buffer size
-        payloadDataSize = pRPCsecureBufferInfo->size;
+    token = NEXUS_MemoryBlock_CreateToken(pNexusMemoryBlock);
+    if (!token) {
 
-        uint32_t subsamples[2];
-        subsamples[0] = 0;
-        subsamples[1] = payloadDataSize;
-        ChkDR(Drm_Reader_DecryptOpaque(
-                m_oDecryptContext,
-                2,
-                subsamples,
-                oAESContext.qwInitializationVector,
-                payloadDataSize,
-                (DRM_BYTE*)pOpaqueDataEnc,
-                (DRM_DWORD*)&payloadDataSize,
-                (DRM_BYTE**)&pOpaqueData));
-
-        cr = CDMi_SUCCESS;
+        LOGGER(LERROR_, "Could not create a token for another process");
+        NEXUS_MemoryBlock_Unlock(pNexusMemoryBlock);
+        NEXUS_MemoryBlock_Free(pNexusMemoryBlock);
+        pOpaqueData = nullptr;
+        goto ErrorExit;
     }
+
+    // Copy provided payload to Input of Decryption.
+    ::memcpy(pNexusMemory, payloadData, payloadDataSize);
+
+    uint32_t subsamples[2];
+    subsamples[0] = 0;
+    subsamples[1] = payloadDataSize;
+
+    ChkDR(Drm_Reader_DecryptOpaque(
+            m_oDecryptContext,
+            2,
+            subsamples,
+            oAESContext.qwInitializationVector,
+            payloadDataSize,
+            (DRM_BYTE*)pNexusMemory,
+            (DRM_DWORD*)&payloadDataSize,
+            (DRM_BYTE**)&pOpaqueData));
+
+    cr = CDMi_SUCCESS;
+
     // Return clear content.
-    *f_pcbOpaqueClearContent = 0;
-    *f_ppbOpaqueClearContent = nullptr;
-    
+    *f_pcbOpaqueClearContent = sizeof(token);
+    *f_ppbOpaqueClearContent = reinterpret_cast<uint8_t*>(&token);
 
-ErrorExit: 
+    NEXUS_MemoryBlock_Unlock(pNexusMemoryBlock);
+    NEXUS_MemoryBlock_Free(pNexusMemoryBlock);
+ErrorExit:
     if (DRM_FAILED(dr))
     {
-        if (pOpaqueData != nullptr) B_Secbuf_Free(pOpaqueData);
-
         LOGGER(LERROR_, "Decryption failed (error: 0x%08X)", static_cast<uint32_t>(dr));
-    }
-
-    // only freeing desc here, pOpaqueData will be freed by WPE in gstreamer
-    else if(pOpaqueData != nullptr){
-        B_Secbuf_FreeDesc(pOpaqueData);
-    }
-
-    // Encrypted data does not need anymore, freeing
-    if(pOpaqueDataEnc != nullptr){
-        B_Secbuf_Free(pOpaqueDataEnc);
     }
 
     return cr;

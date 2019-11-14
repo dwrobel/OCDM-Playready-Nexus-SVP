@@ -212,6 +212,9 @@ private:
     bool mInitiateChallengeGeneration;
 
     DecryptContextMap mDecryptContextMap;
+
+    void *pNexusMemory;
+    uint32_t mNexusMemorySize;
 };
 
 } // namespace CDMi
