@@ -670,12 +670,7 @@ ErrorExit:
         
         m_eKeyState = KEY_ERROR;
         if (m_piCallback) {
-            for (uint8_t  i = 0; i < oLicenseResponse.m_cAcks; ++i) {
-                // Make MS endianness to Cenc endianness.
-                ToggleKeyIdFormat(DRM_ID_SIZE, oLicenseResponse.m_rgoAcks[i].m_oKID.rgb);
-
-                m_piCallback->OnKeyStatusUpdate("KeyError", oLicenseResponse.m_rgoAcks[i].m_oKID.rgb, DRM_ID_SIZE);
-            }
+            m_piCallback->OnError(0, CDMi_S_FALSE, "KeyError");
             m_piCallback->OnKeyStatusesUpdated();
         }
     }
