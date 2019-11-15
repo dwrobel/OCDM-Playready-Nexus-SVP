@@ -49,15 +49,6 @@ extern WPEFramework::Core::CriticalSection drmAppContextMutex_;
 // ~100 KB to start * 64 (2^6) ~= 6.4 MB, don't allocate more than ~6.4 MB
 #define DRM_MAXIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE ( 64 * MINIMUM_APPCONTEXT_OPAQUE_BUFFER_SIZE )
 
-#include <b_secbuf.h>
-
-struct Rpc_Secbuf_Info {
-    uint32_t type;
-    size_t   size;
-    void    *token;
-    void    *token_enc;
-};
-
 OutputProtection::OutputProtection()
     : compressedDigitalVideoLevel(0)
     , uncompressedDigitalVideoLevel(0)
@@ -430,6 +421,11 @@ DRM_RESULT MediaKeySession::PolicyCallback(
 
     ChkArg((f_pbInitData == nullptr) == (f_cbInitData == 0));
 
+    if( NEXUS_Memory_Allocate(mNexusMemorySize, nullptr, &pNexusMemory) != 0 ) {
+        LOGGER(LERROR_, "NexusMemory, could not allocate memory %d", mNexusMemorySize);
+        goto ErrorExit;
+    }
+
     if (initiateChallengeGeneration != false) {
         if (f_pbInitData != nullptr)
         {
@@ -580,9 +576,6 @@ ErrorExit:
 MediaKeySession::~MediaKeySession(void)
 {
     Close();
-
-    if (!pNexusMemory)
-        NEXUS_Memory_Free(pNexusMemory);
 
     LOGGER(LINFO_, "PlayReady Session Destructed");
 }
@@ -819,6 +812,12 @@ CDMi_RESULT MediaKeySession::Close(void)
 
     CleanDecryptContexts();
 
+    if (pNexusMemory) {
+        NEXUS_Memory_Free(pNexusMemory);
+        pNexusMemory = nullptr;
+        mNexusMemorySize = 0;
+    }
+
     if (mInitiateChallengeGeneration == true) {
         if (m_pbRevocationBuffer != nullptr) {
             SAFE_OEM_FREE(m_pbRevocationBuffer);
@@ -871,8 +870,8 @@ CDMi_RESULT MediaKeySession::Decrypt(
     CDMi_RESULT cr = CDMi_S_FALSE;
     DRM_AES_COUNTER_MODE_CONTEXT oAESContext = {0, 0, 0};
     void *pOpaqueData = nullptr;
-    NEXUS_MemoryBlockHandle pNexusMemoryBlock;
-    NEXUS_MemoryBlockTokenHandle token;
+    NEXUS_MemoryBlockHandle pNexusMemoryBlock = nullptr;
+    NEXUS_MemoryBlockTokenHandle token = nullptr;
     static NEXUS_HeapHandle secureHeap = NEXUS_Heap_Lookup(NEXUS_HeapLookupType_eCompressedRegion);
 
     {
@@ -948,9 +947,6 @@ CDMi_RESULT MediaKeySession::Decrypt(
     if (!token) {
 
         LOGGER(LERROR_, "Could not create a token for another process");
-        NEXUS_MemoryBlock_Unlock(pNexusMemoryBlock);
-        NEXUS_MemoryBlock_Free(pNexusMemoryBlock);
-        pOpaqueData = nullptr;
         goto ErrorExit;
     }
 
@@ -982,6 +978,13 @@ CDMi_RESULT MediaKeySession::Decrypt(
 ErrorExit:
     if (DRM_FAILED(dr))
     {
+        if (pOpaqueData) {
+            if (pNexusMemoryBlock) {
+                NEXUS_MemoryBlock_Unlock(pNexusMemoryBlock);
+                NEXUS_MemoryBlock_Free(pNexusMemoryBlock);
+            }
+            pOpaqueData = nullptr;
+        }
         LOGGER(LERROR_, "Decryption failed (error: 0x%08X)", static_cast<uint32_t>(dr));
     }
 
