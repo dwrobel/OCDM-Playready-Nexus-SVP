@@ -209,13 +209,11 @@ public:
         const uint8_t *f_pbInitData, uint32_t f_cbInitData, 
         const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, 
         IMediaKeySession **f_ppiMediaKeySession) {
-        bool isNetflixPlayready = (strstr(keySystem.c_str(), "netflix") != nullptr);
 
         *f_ppiMediaKeySession = new CDMi::MediaKeySession(
             f_pbInitData, f_cbInitData, 
             f_pbCDMData, f_cbCDMData, 
-            m_drmOemContext, m_poAppContext.get(),
-            !isNetflixPlayready
+            m_drmOemContext, m_poAppContext.get()
             );
 
         return CDMi_SUCCESS; 

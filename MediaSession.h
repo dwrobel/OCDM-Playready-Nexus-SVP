@@ -102,8 +102,7 @@ public:
     MediaKeySession(
         const uint8_t *f_pbInitData, uint32_t f_cbInitData, 
         const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, 
-        DRM_VOID *f_pOEMContext, DRM_APP_CONTEXT * poAppContext,  
-        bool initiateChallengeGeneration = false);
+        DRM_VOID *f_pOEMContext, DRM_APP_CONTEXT * poAppContext);
    
     ~MediaKeySession();
     bool playreadyGenerateKeyRequest();
@@ -209,7 +208,6 @@ private:
     DRM_ID mBatchId;
 
     bool m_decryptInited;
-    bool mInitiateChallengeGeneration;
 
     DecryptContextMap mDecryptContextMap;
 
