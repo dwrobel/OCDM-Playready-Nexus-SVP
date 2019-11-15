@@ -210,6 +210,9 @@ private:
     bool m_decryptInited;
 
     DecryptContextMap mDecryptContextMap;
+
+    void *pNexusMemory;
+    uint32_t mNexusMemorySize;
 };
 
 } // namespace CDMi
