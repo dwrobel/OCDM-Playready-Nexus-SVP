@@ -391,9 +391,9 @@ DRM_RESULT MediaKeySession::PolicyCallback(
         , mDrmHeader()
         , m_SessionId()
         , mBatchId()
+        , m_decryptInited(false)
         , pNexusMemory(nullptr)
-        , mNexusMemorySize(512 * 1024)
-        , m_decryptInited(false){
+        , mNexusMemorySize(512 * 1024) {
 
     LOGGER(LINFO_, "Contruction MediaKeySession, Build: %s", __TIMESTAMP__ );
     m_oDecryptContext = new DRM_DECRYPT_CONTEXT;

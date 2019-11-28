@@ -29,7 +29,7 @@
 find_path(LIBNexusPlayready_INCLUDE_DIR drmmanager.h
         PATH_SUFFIXES playready refsw)
 
-find_path(LIBNexusSVP_INCLUDE_DIR b_secbuf.h
+find_path(LIBNexusSVP_INCLUDE_DIR sage_srai.h
         PATH_SUFFIXES refsw)
 
 list(APPEND LIBNexusPlayready_INCLUDE_DIRS ${LIBNexusPlayready_INCLUDE_DIR} ${LIBNexusSVP_INCLUDE_DIR})
@@ -41,7 +41,7 @@ find_library(LIBNexusPlayready_LIBRARY playready30pk)
 list(APPEND NeededLibs prdyhttp)
 
 # needed svp libs
-list(APPEND NeededLibs drmrootfs srai b_secbuf)
+list(APPEND NeededLibs drmrootfs srai)
 
 foreach (_library ${NeededLibs})
     find_library(LIBRARY_${_library} ${_library})
