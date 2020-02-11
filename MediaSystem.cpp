@@ -601,12 +601,18 @@ public:
 
     ErrorExit:
         SAFE_OEM_FREE(pbChallenge);
-        SAFE_OEM_FREE(pTimeChallengeURL);
-        SAFE_OEM_FREE(pbResponse);
+
+        if (pTimeChallengeURL != nullptr) {
+            NEXUS_Memory_Free(pTimeChallengeURL);
+        }
+
+        if (pbResponse != nullptr) {
+            NEXUS_Memory_Free(pbResponse);
+        }
 
         return rc;
     }
-    
+
     CDMi_RESULT CreateSystemExt()
     {
         CDMi_RESULT cr = CDMi_SUCCESS;
