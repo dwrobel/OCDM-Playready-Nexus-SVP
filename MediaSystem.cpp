@@ -17,6 +17,8 @@
 #include "cdmi.h"
 #include "MediaSession.h"
 
+#include <core/core.h>
+#include <cryptalgo/cryptalgo.h>
 #include <plugins/plugins.h>
 
 #include <drmconstants.h>
@@ -32,8 +34,10 @@
 //TODO: mirgrate this to Core
 #include <openssl/sha.h>
 
-using SafeCriticalSection = WPEFramework::Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
-WPEFramework::Core::CriticalSection drmAppContextMutex_;
+using namespace WPEFramework;
+
+using SafeCriticalSection = Core::SafeSyncType<WPEFramework::Core::CriticalSection>;
+Core::CriticalSection drmAppContextMutex_;
 
 // Each challenge saves a nonce to the PlayReady3 nonce store, and each license
 // bind removes a nonce. The nonce store is also a FIFO, with the oldest nonce
@@ -85,6 +89,24 @@ private:
     PlayReady (const PlayReady&) = delete;
     PlayReady& operator= (const PlayReady&) = delete;
 
+    class Config : public Core::JSON::Container {
+    public:
+        Config(const Config&) = delete;
+        Config& operator=(const Config&) = delete;
+        Config()
+            : Core::JSON::Container()
+            , MeteringCertificate()
+        {
+            Add(_T("metering"), &MeteringCertificate);
+        }
+        ~Config()
+        {
+        }
+
+    public:
+        Core::JSON::String MeteringCertificate;
+    };
+
 public:
     PlayReady() 
         : m_drmOemContext(nullptr)
@@ -96,6 +118,8 @@ public:
         , m_poAppContext(nullptr)
         , m_readDir()
         , m_storeLocation()
+        , m_meteringCertificate(nullptr)
+        , m_meteringCertificateSize(0)
     {
         NxClient_JoinSettings joinSettings;
         NxClient_AllocSettings nxAllocSettings;
@@ -126,6 +150,10 @@ public:
     }
 
     ~PlayReady(void) {
+        if (m_meteringCertificate != nullptr) {
+            delete [] m_meteringCertificate;
+            m_meteringCertificate = nullptr;
+        }
         ASSERT(m_poAppContext.get() == nullptr);
         NxClient_Free(&m_nxAllocResults);
         NxClient_Uninit();
@@ -163,6 +191,21 @@ public:
             if (heapStatus.memoryType & NEXUS_MemoryType_eFull)
             {
                 heapSettings.heap = heap;
+            }
+        }
+
+        Config config;
+        config.FromString(configline);
+
+        if (config.MeteringCertificate.IsSet() == true) {
+            Core::File file(config.MeteringCertificate.Value(), true);
+
+            if ( (file.Open(true) == true) && (file.Size() > 0) ) {
+                Core::DataElementFile dataBuffer(file);
+                m_meteringCertificateSize = dataBuffer.Size();
+                m_meteringCertificate     = new DRM_BYTE[m_meteringCertificateSize];
+
+                ::memcpy(m_meteringCertificate, dataBuffer.Buffer(), dataBuffer.Size());
             }
         }
 
@@ -300,8 +343,8 @@ public:
         DRM_RESULT dr;
         dr = Drm_SecureStop_EnumerateSessions(
                 m_poAppContext.get(),
-                0, //playready3MeteringCertSize,
-                nullptr, //playready3MeteringCert,
+                m_meteringCertificateSize, //playready3MeteringCertSize,
+                m_meteringCertificate,     //playready3MeteringCert,
                 &count,
                 &ssSessionIds);
 
@@ -348,8 +391,8 @@ public:
         DRM_RESULT dr = Drm_SecureStop_GenerateChallenge(
                 m_poAppContext.get(),
                 &ssSessionDrmId,
-                0, //playready3MeteringCertSize,
-                nullptr, //playready3MeteringCert,
+                m_meteringCertificateSize, //playready3MeteringCertSize,
+                m_meteringCertificate,     //playready3MeteringCert,
                 0, nullptr, // no custom data
                 &ssChallengeSize,
                 &ssChallenge);
@@ -397,8 +440,8 @@ public:
             dr = Drm_SecureStop_ProcessResponse(
                 m_poAppContext.get(),
                 &sessionDrmId,
-                0, //playready3MeteringCertSize,
-                nullptr, //playready3MeteringCert,
+                m_meteringCertificateSize, //playready3MeteringCertSize,
+                m_meteringCertificate,     //playready3MeteringCert,
                 serverResponseLength,
                 serverResponse,
                 &customDataSizeBytes,
@@ -810,6 +853,9 @@ private:
 
     std::string m_readDir;
     std::string m_storeLocation;
+
+    DRM_BYTE* m_meteringCertificate;
+    uint32_t m_meteringCertificateSize;
 };
 
 static SystemFactoryType<PlayReady> g_instance({"video/x-h264", "audio/mpeg"});
