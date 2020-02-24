@@ -29,8 +29,6 @@
 #include <drmsecuretime.h>
 #include <drmsecuretimeconstants.h>
 
-// #include "PlayReady3MeteringCert.h"
-
 //TODO: mirgrate this to Core
 #include <openssl/sha.h>
 
@@ -198,13 +196,14 @@ public:
         config.FromString(configline);
 
         if (config.MeteringCertificate.IsSet() == true) {
-            Core::File file(config.MeteringCertificate.Value(), true);
-
-            if ( (file.Open(true) == true) && (file.Size() > 0) ) {
-                Core::DataElementFile dataBuffer(file);
+            Core::DataElementFile dataBuffer(config.MeteringCertificate.Value(), Core::File::USER_READ | Core::File::GROUP_READ);
+            
+            if(dataBuffer.IsValid() == false) {
+                TRACE_L1(_T("Failed to open %s"), config.MeteringCertificate.Value().c_str());
+            } else {
                 m_meteringCertificateSize = dataBuffer.Size();
                 m_meteringCertificate     = new DRM_BYTE[m_meteringCertificateSize];
-
+                
                 ::memcpy(m_meteringCertificate, dataBuffer.Buffer(), dataBuffer.Size());
             }
         }
