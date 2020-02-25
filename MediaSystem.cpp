@@ -357,9 +357,7 @@ public:
         if (dr != DRM_SUCCESS && dr != DRM_E_NOMORE) {
             LOGGER(LERROR_, "Error in Drm_SecureStop_EnumerateSessions (error: 0x%08X)", static_cast<unsigned int>(dr));
             cr = CDMi_S_FALSE;
-        } else {        
-            ASSERT((count * DRM_ID_SIZE) > idsLength);
-                             
+        } else {                 
             for (uint32_t i = 0; i < count; ++i)
             {
                 ASSERT(sizeof(ssSessionIds[i].rgb) == DRM_ID_SIZE);
