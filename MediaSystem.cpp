@@ -57,25 +57,32 @@ static DRM_WCHAR* createDrmWchar(std::string const& s) {
 
 bool calcFileSha256 (const std::string& filePath, uint8_t hash[], uint32_t hashLength )
 {
-    FILE* const file = fopen(filePath.c_str(), "rb");
-    if (!file){
-        return false;
+    bool result(false); 
+
+    ASSERT(filePath.empty() == false);
+
+    Core::DataElementFile dataBuffer(filePath, Core::File::USER_READ);
+
+    if ( dataBuffer.IsValid() == false ) {
+        TRACE_L1("Failed to open %s", filePath.c_str());
+    } else {
+        WPEFramework::Crypto::SHA256 calculator; 
+        ASSERT(hashLength == calculator.Length);
+        
+        if (hashLength == calculator.Length) {
+            calculator.Input(dataBuffer.Buffer(), dataBuffer.Size());
+
+            const uint8_t* fileHash = calculator.Result();
+            
+            ::memcpy(hash, fileHash, calculator.Length);
+
+            result = true;
+        } else {
+            TRACE_L1("Output hash buffer has a incorrect size(%d), need %d bytes", hashLength, calculator.Length);
+        }
     }
 
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    const int BUFSIZE = 32768;
-    uint8_t buffer[BUFSIZE];
-    size_t bytesRead = 0;
-    
-    while ((bytesRead = fread(&buffer[0], 1, BUFSIZE, file))){
-        SHA256_Update(&sha256, &buffer[0], bytesRead);
-    }
-    
-    fclose(file);
-
-    SHA256_Final(&hash[0], &sha256);
-    return true;
+    return result;
 }
 
 namespace CDMi {
@@ -226,7 +233,7 @@ public:
 
     void Deinitialize(const WPEFramework::PluginHost::IShell * shell)
     {
-        if(m_poAppContext.get()) {
+          if(m_poAppContext.get()) {
             // Deletes all expired licenses from the license store and perform maintenance
             DRM_RESULT dr = Drm_StoreMgmt_CleanupStore(m_poAppContext.get(),
                                             DRM_STORE_CLEANUP_ALL,
@@ -350,9 +357,9 @@ public:
         if (dr != DRM_SUCCESS && dr != DRM_E_NOMORE) {
             LOGGER(LERROR_, "Error in Drm_SecureStop_EnumerateSessions (error: 0x%08X)", static_cast<unsigned int>(dr));
             cr = CDMi_S_FALSE;
-        } else {
+        } else {        
             ASSERT((count * DRM_ID_SIZE) > idsLength);
-                    
+                             
             for (uint32_t i = 0; i < count; ++i)
             {
                 ASSERT(sizeof(ssSessionIds[i].rgb) == DRM_ID_SIZE);
@@ -819,12 +826,6 @@ public:
             uint32_t secureStoreHashLength) override
     {
         SafeCriticalSection lock(drmAppContextMutex_);
-
-        if (secureStoreHashLength < 256)
-        {
-            LOGGER(LERROR_, "Error: opencdm_get_secure_store_hash needs an array of size 256");
-            return CDMi_S_FALSE;
-        }
 
         if (calcFileSha256(m_storeLocation, secureStoreHash, secureStoreHashLength) == false)
         {
