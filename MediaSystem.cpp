@@ -166,38 +166,14 @@ public:
 
     void Initialize(const WPEFramework::PluginHost::IShell * shell, const std::string& configline)
     {
-        LOGGER(LINFO_, "Initialize PlayReady System, Build: %s", __TIMESTAMP__ );
-
-        NEXUS_ClientConfiguration platformConfig;
-        OEM_Settings oemSettings;
-        NEXUS_MemoryAllocationSettings heapSettings;
-        DRM_RESULT dr = DRM_SUCCESS;
-
         string persistentPath = shell->PersistentPath() + string("playready/");
         m_readDir = persistentPath;
         m_storeLocation = persistentPath + "drmstore";
 
         LOGGER(LINFO_,  "m_readDir: %s", m_readDir.c_str());
         LOGGER(LINFO_,  "m_storeLocation: %s", m_storeLocation.c_str());
-
-        WPEFramework::Core::Directory storeDirectory(persistentPath.c_str());
-        storeDirectory.CreatePath();
-
-        WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), persistentPath);
-
-        /* Drm_Platform_Initialize */
-        NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
-        NEXUS_Platform_GetClientConfiguration(&platformConfig);
-        if (platformConfig.heap[NXCLIENT_FULL_HEAP])
-        {
-            NEXUS_HeapHandle heap = platformConfig.heap[NXCLIENT_FULL_HEAP];
-            NEXUS_MemoryStatus heapStatus;
-            NEXUS_Heap_GetStatus(heap, &heapStatus);
-            if (heapStatus.memoryType & NEXUS_MemoryType_eFull)
-            {
-                heapSettings.heap = heap;
-            }
-        }
+        
+        WPEFramework::Core::SystemInfo::SetEnvironment(_T("HOME"), persistentPath);  
 
         Config config;
         config.FromString(configline);
@@ -212,6 +188,37 @@ public:
                 m_meteringCertificate     = new DRM_BYTE[m_meteringCertificateSize];
                 
                 ::memcpy(m_meteringCertificate, dataBuffer.Buffer(), dataBuffer.Size());
+            }
+        }
+
+        InitializeSystem();      
+    }
+
+    void InitializeSystem(){
+        LOGGER(LINFO_, "Initialize PlayReady System, Build: %s", __TIMESTAMP__ );
+
+        if(m_poAppContext.get()){
+            DeinitializeSystem();
+        }
+
+        WPEFramework::Core::Directory(m_readDir.c_str()).CreatePath();
+        
+        NEXUS_ClientConfiguration platformConfig;
+        OEM_Settings oemSettings;
+        NEXUS_MemoryAllocationSettings heapSettings;
+        DRM_RESULT dr = DRM_SUCCESS;
+
+        /* Drm_Platform_Initialize */
+        NEXUS_Memory_GetDefaultAllocationSettings(&heapSettings);
+        NEXUS_Platform_GetClientConfiguration(&platformConfig);
+        if (platformConfig.heap[NXCLIENT_FULL_HEAP])
+        {
+            NEXUS_HeapHandle heap = platformConfig.heap[NXCLIENT_FULL_HEAP];
+            NEXUS_MemoryStatus heapStatus;
+            NEXUS_Heap_GetStatus(heap, &heapStatus);
+            if (heapStatus.memoryType & NEXUS_MemoryType_eFull)
+            {
+                heapSettings.heap = heap;
             }
         }
 
@@ -233,7 +240,12 @@ public:
 
     void Deinitialize(const WPEFramework::PluginHost::IShell * shell)
     {
-          if(m_poAppContext.get()) {
+        DeinitializeSystem();
+    }
+
+    void DeinitializeSystem() { 
+        LOGGER(LINFO_, "Deinitialize PlayReady System, Build: %s", __TIMESTAMP__ );
+        if(m_poAppContext.get()) {
             // Deletes all expired licenses from the license store and perform maintenance
             DRM_RESULT dr = Drm_StoreMgmt_CleanupStore(m_poAppContext.get(),
                                             DRM_STORE_CLEANUP_ALL,
@@ -258,6 +270,18 @@ public:
         const uint8_t *f_pbInitData, uint32_t f_cbInitData, 
         const uint8_t *f_pbCDMData, uint32_t f_cbCDMData, 
         IMediaKeySession **f_ppiMediaKeySession) {
+
+        // ToDo: This needs to be solved a bit nicer... 
+        // Since the OCDM server is not aware of the location of the store but exposes a "delete store" API,
+        // we need to check somewhere if it's deleted and recover it. Sadly the only way to recover is to
+        // reinitialize the system. ¯\_(ツ)_/¯ 
+        //
+        // For now I think this seems to be the most logical place... 
+
+        Core::File file(m_storeLocation);
+        if(file.Exists() == false){
+            InitializeSystem();
+        }
 
         *f_ppiMediaKeySession = new CDMi::MediaKeySession(
             f_pbInitData, f_cbInitData, 
@@ -311,7 +335,7 @@ public:
         PackedCharsToNative(versionStr, g_dstrReqTagPlayReadyClientVersionData.cchString + 1);
         LOGGER(LINFO_, "Version %s.", versionStr);
         
-        //return std::string("2.5.0.0000");
+        //return std::string("2.5.0.0000");        
         return std::string(versionStr);
     }
 
